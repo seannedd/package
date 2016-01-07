@@ -1,0 +1,18 @@
+#!/bin/csh
+#
+# Script for changing CHEM3D co-ordinates
+# to GAMESS coordinates set
+#
+echo  "Input file must have extension .rot.dat"
+echo  "Output is *.data"
+#
+echo  "Top of input file:"
+echo  "#atoms, atomA, atomB,  z rotation angle, #rotations"
+echo  "(z angle follows the right rule)"
+echo  "Now list atom type and cartesian coordinates up to #atoms"
+echo  "At the end of the file give the number of atoms to rotate"
+echo  "then list those atom numbers line by line"
+echo  "Note: These atom numbers can be obtained using"
+echo  "      a program such as MacMolPlt"
+#
+ /u/home/s/snedd/bin/misc/rotate $1.rot.dat $1.data

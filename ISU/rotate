@@ -1,0 +1,5 @@
+#!/bin/csh
+#
+setenv INPUT $1
+setenv OUTPUT $2
+~snedd/bin/misc/rotate.x 

@@ -1,0 +1,1200 @@
+C xx Oct 06 - MWS - check some commons for sanity with GAMESS
+C 29 SEP 98 - CHC - Integrating DLC with TINKER
+C 18 MAY 98 - JRS - TOYS: CALL TINKER OPT OF REGION 4, FORM QMMM GRAD
+C
+C
+c  ##################################################################
+c  #                                                                #
+c  #     TOYS: DRIVER FOR QMMM OPTIMIZATION                         #
+c  #                                                                #
+c  ##################################################################
+C*MODULE MOMM1    *DECK RXNTOY
+C> @brief    main driver for qmmm optimization with reaxff
+C>
+C> @details  main driver for qmmm optimization with reaxff that controls
+C>           linking atoms for IMOMM and SIMOMM methods
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      SUBROUTINE RXNTOY
+C
+CSN   IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+c
+c --From GAMESS
+      PARAMETER (mxatm=2000,maxatm=2000)
+C
+C --From Tinker
+CSN   INCLUDE 'sizes.i'
+C --From ReaxFF
+      include 'cbka.blk'
+      include 'cbkm.blk'
+      include 'opt.blk'
+c
+C --For use in this subroutine
+      PARAMETER (ANG2BHR=1.889725989D+00,
+     *           BHR2ANG=0.52917724924D+00,
+     *           CMA2HB=8.432969D-4,zzero=0.0D+00)
+C
+C -- MAXIMUM SIZES and COMMONS FOR QMMM LINKING
+c
+      LOGICAL MMONLY,QMMM,IMOMM,SIMOMM
+      CHARACTER*6 CTMODE, CTMETH
+c
+      PARAMETER (MAXLNK=300, MAXR1=2000)
+c
+      COMMON /QMMM1/ IMOMM,SIMOMM,NPAIR,NSEQ
+      common /qmmm2/ IQMatm(MAXR1)
+      COMMON /QMMM3/ LINKGE(3*MAXLNK),blqm(MAXLNK),blmm(MAXLNK)
+      COMMON /NWTOPT/ GRDMIN,CTMODE,CTMETH
+      COMMON /TINOPT/ MPARTI,MMONLY,TYPEMM,QMMM
+c
+c -- New COMMON between TOYS and Tinker only
+      COMMON /TGRAD/ TEG(3*MAXATM)
+c
+      DIMENSION TTEG(3*Maxatm), CTEMP(3,MAXLNK)
+c
+C -- Bits from GAMESS
+c
+      LOGICAL GOPARR,DSKWRK,MASWRK,LINEAR
+c
+      COMMON /FUNCT / ENERGY,EG(3*MXATM)
+      COMMON /INFOA / NATFF,ICH,MUL,NUM,NQMT,NE,NAFF,NB,
+     *                ZAN(MXATM),FFC(3,MXATM),IAN(MXATM)
+      COMMON /IOFILE/ IR,IW,IP,IS,IPK,IDAF,NAV,IODA(950)
+      COMMON /PAR   / ME,MASTER,NPROC,IBTYP,IPTIM,GOPARR,DSKWRK,MASWRK
+      COMMON /ZMAT  / NZMAT,NZVAR,NVAR,nsymc,LINEAR
+      COMMON /DLCFRZ/ FVALUE(50),ITABLE(50),IFTYPE(50),NCONST
+      COMMON /FMCOM / XX(1)
+c
+c -- Tinker COMMONS
+c
+c     x       current x-coordinate for each atom in the system
+c     y       current y-coordinate for each atom in the system
+c     z       current z-coordinate for each atom in the system
+c     n       total number of atoms in the current system
+c     type    atom type number for each atom in the system
+c
+c
+CSN   integer n,type
+      real*8 x,y,z
+      common /atomst/ 
+     *        x(maxatm),y(maxatm),z(maxatm),n,type(maxatm)
+c
+c ---------------------------------------------
+c
+c
+C ------------------------------------------------------------
+c  
+C      Region 2-3 linking scheme
+C      IMOMM by Morokuma et al.
+c
+C ------------------------------------------------------------
+       write(6,*)'inside rxntoy'
+        IF(IMOMM) THEN
+C    Region 1
+          DO 10 I=1,NSEQ
+             X(iqmatm(I))= FFC(1,I)*BHR2ANG
+             Y(iqmatm(I))= FFC(2,I)*BHR2ANG
+             Z(iqmatm(I))= FFC(3,I)*BHR2ANG 
+   10     continue
+c
+c -- change Region 1-2 bondlengths to Region 1-3 bondlengths
+c
+          DO 20 I=1,NPAIR
+             LR1=LINKge(3*I-2)
+             LR2=LINKge(3*I-1)
+             LR3=LINKge(3*I  )
+             EXTEND=blmm(I)/blqm(I)
+C
+             DX=(FFC(1,LR2)-FFC(1,LR1))*BHR2ANG
+             DY=(FFC(2,LR2)-FFC(2,LR1))*BHR2ANG
+             DZ=(FFC(3,LR2)-FFC(3,LR1))*BHR2ANG
+C        
+             X(LR3)=FFC(1,LR1)*BHR2ANG +(DX*EXTEND)
+             Y(LR3)=FFC(2,LR1)*BHR2ANG +(DY*EXTEND)
+             Z(LR3)=FFC(3,LR1)*BHR2ANG +(DZ*EXTEND)
+  20      CONTINUE
+c
+c      
+C
+C -- Call ReaxFF optimization with R1 and R3 INACTIVE
+C    Convert Tinker gradient from kcal/mole/ang to Hartrees/Bohr
+C
+CSN       CALL TNEWTX(CTMODE,CTMETH,GRDMIN)
+          CALL RXNTNEWTX
+C
+          DO 30 I=1,NSEQ
+            TTEG(I*3-2)=TEG(iqmatm(I)*3-2)*CMA2HB
+            TTEG(I*3-1)=TEG(iqmatm(I)*3-1)*CMA2HB
+            TTEG(I*3  )=TEG(iqmatm(I)*3  )*CMA2HB
+  30      CONTINUE
+          DO 35 I=1,npair
+            TTEG(3*(I+nseq)-2)=TEG(linkge(I*3)*3-2)*CMA2HB
+            TTEG(3*(I+nseq)-1)=TEG(linkge(I*3)*3-1)*CMA2HB
+            TTEG(3*(I+nseq)  )=TEG(linkge(I*3)*3  )*CMA2HB
+  35      CONTINUE
+
+C
+C -- Convert the GAMESS Cartesian gradient to internals
+c
+       natff = nseq + npair
+          CALL TRANG(EG,NVAR,3*NATFF)
+C    CHC
+C    There may be other ways to check DLC coordinates.
+C
+      if (nzvar .gt. nvar) then
+C...Dynamic memory allocation.......
+       CALL VALFM(LOADFM)
+       LCOR   = 1 + LOADFM
+       LTCOR  = LCOR + NZVAR
+       LS     = LTCOR + NZVAR
+       LAST   = LS + NZvar*NZVAR
+       NEED   = LAST - LCOR
+       CALL GETFM(NEED)
+C
+       CALL DAREAD(IDAF,IODA,XX(LS),NZVAR*NZVAR,46,0)
+       call tfdq(EG,XX(lcor),XX(ls),nvar,nzvar,1)
+      endif
+c
+c -- Swap Region 3 and Region 2 positions in C
+c    and recalculate B and B inverse before converting Tinker
+c    grad to internals
+c
+          DO 40 I=1,npair
+            CTEMP(1,I)=FFC(1,linkge(I*3-1))
+            CTEMP(2,I)=FFC(2,linkge(I*3-1))
+            CTEMP(3,I)=FFC(3,linkge(I*3-1))
+C
+            FFC(1,linkge(I*3-1))=X(linkge(I*3))*ANG2BHR
+            FFC(2,linkge(I*3-1))=Y(linkge(I*3))*ANG2BHR
+            FFC(3,linkge(I*3-1))=Z(linkge(I*3))*ANG2BHR
+  40      CONTINUE
+C
+          CALL BANDBI
+C     ----- TRANG TRANSFORMS THE GRADIENT FROM CARTESIANS TO INTERNALS -----
+          CALL TRANG(TTEG,NVAR,3*NATFF)
+
+C...Transform the DLC steps, EG into Redunadant
+C...internal coordinate steps, XX(LCOR) 
+C       TFDQ TRANSFORMS DLC TO REDUNDANT INTERNAL COORDS.
+       call tfdq(TTEG,XX(lTcor),XX(ls),nvar,nzvar,1)
+
+C
+C -- QMMM gradient is the sum of QM and MM gradients in internals
+C
+cjrs temp diagnostic
+c
+      if (maswrk) write(iw,970)
+        DO 260 I=1,NzVAR
+          if (maswrk) WRITE(IW,971) I,xx(LCOR+I-1),XX(LTCOR+I-1),
+     *    xx(LCOR+I-1)+XX(LTCOR+i-1)
+ 260    continue
+c
+        DO 55 I=1,NzVAR
+          xx(LCOR+I-1)=XX(LCOR+I-1)+XX(LTCOR+I-1)
+  55    CONTINUE
+C
+C -- Swap back Region 2 positions for Region 3  in C
+C    Recalculate B and B inverse
+C    Convert QMMM gradient back to Cartesians
+C
+          DO 60 I=1,Npair
+            FFC(1,linkge(I*3-1))=CTEMP(1,I)
+            FFC(2,linkge(I*3-1))=CTEMP(2,I)
+            FFC(3,linkge(I*3-1))=CTEMP(3,I)
+ 60       CONTINUE   
+c
+          CALL BANDBI
+      call tfdq(XX(lcor),EG,XX(ls),nvar,nzvar,2)
+          CALL TRANGB(EG,NVAR,3*NATFF)
+          CALL RETFM(NEED)
+          GOTO 600
+C
+C      End of {IF(IMOMM)} block
+C
+       END IF   
+c ---------------------------------------------------------
+C
+c        SIMOMM: No explicit link atoms used
+C
+c ---------------------------------------------------------     
+         IF(SIMOMM) THEN
+          DO 70 I=1,nseq
+          X(IQMATM(I))= FFC(1,I)*BHR2ANG
+          Y(IQMATM(I))= FFC(2,i)*BHR2ANG
+  70      Z(IQMATM(I))= FFC(3,i)*BHR2ANG
+c
+CSN    write(6,*)'natff 1 is ',natff
+          DO 75 I=1,3*NATFF
+           TTEG(I)=ZZERO
+  75      CONTINUE
+C
+C -- Call Tinker newton optimization with R1 and R3 INACTIVE
+C    Convert Tinker gradient from kcal/mole/ang to Hartrees/Bohr
+C
+CSN       CALL TNEWTX(CTMODE,CTMETH,GRDMIN)
+CSN       call ffopt
+
+          CALL RXNTNEWTX
+
+CSN    write(6,*)'natff 2 is ',natff
+CSN    write(6,*)'na is ',na
+
+          DO 80 I=1,NSEQ
+            TTEG(I*3-2)= TEG(IQMATM(I)*3-2)*CMA2HB
+            TTEG(I*3-1)= TEG(IQMATM(I)*3-1)*CMA2HB
+            TTEG(I*3  )= TEG(IQMATM(I)*3  )*CMA2HB
+  80      CONTINUE
+          CALL TRANG(EG,NVAR,3*NATFF)
+          CALL TRANG(tTEG,NVAR,3*NATFF)
+C
+      IF (MASWRK) THEN
+      WRITE(IW,975)
+        DO 275 I=1,NVAR
+           WRITE(IW,971) I,EG(I),TTEG(I), 
+     *                     EG(I)+TTEG(I)
+ 275    continue
+      endif
+C
+C -- QMMM gradient is the sum of these two
+C
+CSN --- nvar should be set somehow ---
+           DO 90 I=1,NVAR
+              EG(I)=EG(I)+TTEG(I)
+  90       CONTINUE
+           CALL TRANGB(EG,NVAR,3*NATFF)
+           GOTO 600
+C
+C      IF(SIMOMM) ENDIF
+C
+        END IF  
+c
+c
+c
+ 600  CONTINUE 
+c -- This bit should go at the very end after the gradient conversion
+c     and values in C have been shifted back to GAMESS values
+c
+c
+      RETURN
+  970 FORMAT(/,/,5X,'INTERNAL',8X,'GAMESS GRAD',7X,'ReaxFF GRAD',6X,
+     #'HYBRID GRAD',/, 4X,'COORDINATE',8X,'(H/B, H/R)',6X,'(H/B, H/R)',
+     #9X,'(H/B, H/R)',/,4X,63('-'))
+  971 FORMAT(6X,I3,10X,F12.8,5X,F12.8,5X,F12.8)
+  975 FORMAT(/,/,5X,'INTERNAL',8X,'GAMESS GRAD',7X,'ReaxFF GRAD',6X,
+     #'HYBRID GRAD',/, 4X,'COORDINATE',8X,'(H/B, H/R)',6X,'(H/B, H/R)',
+     #9X,'(H/B, H/R)',/,4X,63('-'))
+      END
+
+c   This routine changed by Cheol, June 2003.
+c   With this modification, user no more needs to input LINKGE
+c   definition, which has been quite troublesome.
+c
+c  ##################################################################
+c  #                                                                #
+c  #     linkin: Read $LINK card for info on how to link the QM     #
+c  #             and MM regions of a QM/MM optimization             #
+c  #                                                                #
+c  ##################################################################
+c
+C*MODULE MOMM1    *DECK LINKINR
+C> @brief    driver for linking the QM and MM regions
+C>
+C> @details  driver for linking the QM and MM regions using the $LINK card
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   mode   : checks for existence of $LINK group 
+C>
+      SUBROUTINE LINKINR(mode)
+C
+CSN   IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+c
+      include 'cbka.blk'
+      include 'cbkm.blk'
+      include 'opt.blk'
+CSN   include 'sizes.i'
+CSN   include 'usage.i'
+CSN   include 'atoms.i'
+CSN   include 'couple.i'
+c
+      PARAMETER (NNAM=3,MAXATM=2000)
+CSN   PARAMETER (NNAM=3)
+CSN   PARAMETER (MAXLNK=50, MAXR1=100,zzero=0.0d+00, oone=1.0d+00)
+      PARAMETER (MAXLNK=300, MAXR1=2000,zzero=0.0d+00)
+c
+      LOGICAL GOPARR,DSKWRK,MASWRK,mmonly,qmmm
+      LOGICAL IMOMM,SIMOMM,FLAG
+      INTEGER TAG,CLASS,ATOMIC,VALENCE
+      REAL*8 MASS
+      CHARACTER*10 NAME
+      CHARACTER*20 STORY
+      DOUBLE PRECISION LINK,BLQM,BLMM
+
+      DIMENSION QNAM(NNAM),KQNAM(NNAM)
+      DIMENSION ITMPLNK(3*MAXLNK)
+CSN   dimension imovesav(maxatm)
+CSN   dimension ffctemp(3,maxatm)
+C
+C -- MAXIMUM SIZES and COMMONS FOR QMMM LINKING
+c
+      COMMON /QMMM1/ IMOMM,SIMOMM,NPAIR,NSEQ
+      COMMON /QMMM2/ IQMATM(MAXR1)
+      COMMON /QMMM3/ LINKGE(3*MAXLNK),BLQM(MAXLNK),BLMM(MAXLNK)
+      COMMON /ATMTYP/ MASS(MAXATM),TAG(MAXATM),CLASS(MAXATM),
+     *                ATOMIC(MAXATM),VALENCE(MAXATM),NAME(MAXATM),
+     *                STORY(MAXATM)
+C
+c --  COMMONS FROM GAMESS
+c
+      COMMON /INFOA / NATFF,ICH,MUL,NUM,NQMT,NE,NAFF,NB,
+     *                ZAN(MAXATM),FFC(3,MAXATM),IAN(MAXATM)
+      COMMON /IOFILE/ IR,IW,IP,IS,IPK,IDAF,NAV,IODA(950)
+      COMMON /PAR   / ME,MASTER,NPROC,IBTYP,IPTIM,GOPARR,DSKWRK,MASWRK
+      COMMON /TINOPT/ MPARTI,MMONLY,TYPEMM,QMMM
+      COMMON /ZMTALT/ NZMAT2,NZVAR2,NVAR2,NZMTRD,ICOORD
+C
+      DATA LINK /8HLINK    /
+      DATA QNAM /8HIMOMM   ,8HSIMOMM  ,8HIQMATM  /
+      DATA KQNAM/0,0,1/
+c
+CSN   write(6,*)'inside linkin'
+      KQNAM(3) = 10*100+1
+c
+C    --- INITIALIZE SOME VALUES
+c
+      imomm = .false.
+      simomm = .false.
+      LINKGE(1)=0
+      do i=1,3*maxlnk
+         linkge(i) = 0
+      enddo
+      do i=1,maxlnk
+         blqm(i) = zzero
+         blmm(i) = zzero
+      enddo
+CSN   do i=1,na
+CSN    zantemp(i)=zzero
+CSN     do j=1,3
+CSN      ffctemp(j,i)=zzero
+CSN     enddo
+CSN   enddo
+c
+c     user has to specify at least some QM atoms below!
+c
+CSN   if iqmatm()=0 all atoms are MM
+      do i=1,maxr1
+         iqmatm(i) = 0
+         imove(i) = 1
+      enddo
+C
+C     ----- READ NAMELIST $LINK -----
+c
+      JRET = 0
+      CALL NAMEIO(IR,JRET,LINK,NNAM,QNAM,KQNAM,
+     *     IMOMM,SIMOMM,IQMATM,0,
+     *     0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *     0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *     0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *     0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0)
+C
+      if (jret.eq.0) then
+         qmmm  = .true.
+         mmonly= .false.
+         if (maswrk .and. qmmm) write(IW,*)
+     *        '---- QMMM procedure is ON ----'
+      end if
+      IF (JRET.EQ.1) THEN
+         qmmm  = .false.
+         mmonly= .false.
+         return
+      end if
+      IF (JRET.GE.2) THEN
+         IF(MASWRK) WRITE(IW,*) 'TROUBLE INTERPRETING $LINK '
+         CALL ABRT
+CSN      CALL ABORT
+      END IF
+c
+c         the argument mode=0 is just to find out if this group exists,
+c         in a later call, it is fully parsed (after -tinkin- called)
+c
+      if(mode.eq.0) return
+c
+C     Check IQMATM
+c     Note that currently the maximum number of IQMATM is set to 100.
+c     If you have more than 100 QM atoms, you must increase MAXR1.
+c     MAXR1 has been upgraded to 2000 QM atoms
+c
+      nseq=0
+      DO I=1,MAXR1
+         IF(IQMATM(I) .NE. 0) NSEQ=NSEQ+1
+      ENDDO
+CSN   natemp = na
+CSN   natff = nseq
+CSN   iii=0
+CSN   jjj=0
+CSN   write(6,*)'after initialization set'
+CSN   do iii=1,na
+CSN    zantemp(iii) = zan(iii)
+CSN    zan(iii) = zzero
+CSN    write(6,*)'zan(',iii,') is ',zan(iii)
+CSN     do jjj=1,3
+CSN      write(6,*)'ffc(',jjj,',',iii,') is ',ffc(jjj,iii)
+CSN      ffctemp(jjj,iii) = ffc(jjj,iii)
+CSN      ffc(jjj,iii) = zzero
+CSN     end do
+CSN   end do
+CSN   write(6,*)'after natff set'
+CSN   do iii=1,natff
+CSNC   zan(iii) = zantemp(iqmatm(iii)) 
+CSN    do jjj=1,3
+CSN    ffc(jjj,iii) = ffctemp(jjj,iqmatm(iii))
+CSN    write(6,*)'ffc(',jjj,',',iii,') is ',ffc(jjj,iii)
+CSN    end do
+CSN   end do
+      IF (Nseq .eq.  0) THEN
+        IF (MASWRK) WRITE(IW,910)
+CSN     CALL ABORT
+CSN     CALL ABRT
+       write(6,*)'MM ATOMS ONLY OR QMMM REQUIRES at least one QM atom'
+       return
+      ENDIF
+c
+C  Check IMOMM and SIMOMM, only one can be chosen, but one must be.  
+c
+      If ((simomm.or.imomm)  .and.  .not.(simomm.and.imomm)) then
+        continue 
+      else
+        IF (MASWRK) WRITE(IW,915)
+        CALL ABRT
+      endif
+c
+C     Check Linkge
+c
+      if (MASWRK) write(IW,935)
+c
+C     The program generates LINKGE definition on the basis of
+c     IQMATM
+c     First value of a pair is the QM atom sequence of TINKER part.
+c     Second value of a pair is the MM atom sequence of TINKER part.
+C
+      lkgidx=0
+CSN   write(6,*)'nseq is ',nseq
+      do i=1,nseq
+CSN   n12     number of atoms directly bonded to each atom
+CSN   i12     atom numbers of atoms 1-2 connected to each atom
+CSN   For Reaxff ia gives number of atoms and iag gives connected atom
+CSN maybe n12 related to imove in ReaxFF
+CSN     do j=1,n12(iqmatm(i))
+CSN        flag=.false.
+CSN        do k=1,nseq
+CSN           if (i12(j,iqmatm(i)).eq.iqmatm(k)) then
+CSN              flag=.true.
+CSN           endif
+CSN        enddo
+CSN        if (.not.flag) then
+CSN           lkgidx=lkgidx+1
+CSN           linkge(lkgidx*2-1)=iqmatm(i)
+CSN           linkge(lkgidx*2)=i12(j,iqmatm(i))
+CSN        endif
+CSN     enddo
+CSN     write(6,*)'iag(iqmatm(i),2) is ',iag(iqmatm(i),2)
+        do j=1,iag(iqmatm(i),2)
+CSN      write(6,*)'iag(',iqmatm(i),',',j+2,') is ,',iag(iqmatm(i),j+2)
+CSN      write(6,*)'iag(',iqmatm(i),'1) is ,',iag(iqmatm(i),1)
+CSN      write(6,*)'iag(',iqmatm(i),'2) is ,',iag(iqmatm(i),2)
+           flag=.false.
+           do k=1,nseq
+CSN      write(6,*)'iqmatm(',k,') is ,',iqmatm(k)
+CSN      write(6,*)'iag(',iqmatm(i),',',j+2,') is ,',iag(iqmatm(i),j+2)
+              if (iag(iqmatm(i),j+2).eq.iqmatm(k)) then
+                 flag=.true.
+              endif
+           enddo
+           if (.not.flag) then
+              lkgidx=lkgidx+1
+              linkge(lkgidx*2-1)=iqmatm(i)
+              linkge(lkgidx*2)=iag(iqmatm(i),j+2)
+           endif
+        enddo
+      enddo
+c
+C     write out the linkage pairs
+c
+CSN   write(6,*)'lkgidx is ',lkgidx
+      do i=1,lkgidx
+         if (MASWRK) write(IW,945) i,linkge(i*2-1),linkge(i*2)
+      enddo
+c
+c     Count the number of pairs
+c     Redefine LINKGE values.
+c     IF icoord.eq.5 (TINKER coordinate)
+c        First value of a pair is the QM atom sequence of TINKER region
+c     ELSE IF iccord.eq.-1 (UNIQUE)
+c        First value of a pair is the QM atom sequence of QM region
+c     ENDIF
+C     IF icoord.eq.5 then
+c        First value of a pair will be redefined as the QM atom sequence
+c        of QM region in TIN2GMS routine
+c     ENDIF
+c     Second value of a pair is the H atom sequence of QM region
+c     Third value of a pair is the MM atom sequence of TINKER region
+c
+      npair=0
+      DO I=1,MAXLNK
+         IF(linkge(I*2) .NE. 0) npair=npair+1
+      enddo
+      IF (Npair .eq. 0) then
+        IF (MASWRK) WRITE(IW,920)
+        CALL ABRT
+CSN     CALL ABORT
+      else
+         DO I=1,NPAIR
+            LR1=LINKGE(2*I-1)
+            LR2=LINKGE(2*I  )
+CSN         write(6,*)'lr1, lr2 is ',lr1,lr2
+            if (icoord.eq.5 .or. icoord.eq.6) then
+               ITMPLNK(I*3-2)=LR1
+            elseif (icoord.eq.-1) then
+               DO J=1,NSEQ
+                  IF (LR1.EQ.IQMATM(J)) ITMPLNK(I*3-2)=J
+               enddo
+            endif
+            ITMPLNK(I*3-1)=I+NSEQ
+            ITMPLNK(I*3  )=LR2
+C
+C        Construct BLQM and BLMM
+c
+            zan1 = zan(lr1)
+            zan2 = zan(lr2)
+            CALL GTDIST(zan1, ONE,RDIST)
+            BLQM(I)=RDIST
+            call GTDIST(zan1,zan2,RDIST)
+            BLMM(I)=RDIST
+         enddo
+         DO I=1,NPAIR*3
+            LINKGE(I)=ITMPLNK(I)
+CSN         write(6,*)'linkge(',i,') is ',linkge(i)
+         enddo
+      endif
+c
+C
+C     Generate inactive atoms in MM calculations automatically..
+C
+      if (maswrk) write(iw,970)
+      do i=1,nseq
+CSN use imove in ReaxFF instead ... might require reordering or adding
+CSN to a COMMON to pass imove
+CSN      use(iqmatm(i))=.false.
+         imove(iqmatm(i))=0
+CSN      nuse=nuse-1
+      enddo
+CSN
+CSN --- need to save atoms to move before adding in npair
+CSN
+CSN   write(6,*)'before initializing imoves, na is ',na
+CSN   do i=1,na
+CSN      imoves(i) = 1
+CSN      write(6,*)'imoves(',i,') is ',imoves(i)
+CSN   end do
+C
+CSN   write(6,*)'linkin 1'
+CSN   do i=1,na
+CSN      imoves(i) = imove(i)
+CSN      write(6,*)'imove(',i,') is ',imove(i)
+CSN      write(6,*)'imoves(',i,') is ',imoves(i)
+CSN   end do
+CSN
+      if (maswrk) write(iw,940) (iqmatm(i),i=1,nseq)
+c     IMOMM requires to inactivate some more atoms in MM region
+      if (imomm) then
+         do i=1,npair
+CSN same idea in using imove instead
+CSN           use(linkge(i*3))=.false.
+              imove(linkge(i*3))=0
+CSN           nuse=nuse-1
+         enddo
+      endif
+C
+c     Write LINK options to output file
+c
+      if (maswrk) then
+         if(simomm) then
+            write(iw,930) 'SIMOMM'
+         elseif (imomm)  then
+            write(iw,930) 'IMOMM'
+         endif
+         write(iw,936)
+         write(iw,940) (iqmatm(i),i=1,nseq)
+         if (imomm) then
+            write(iw,950)
+            do i=1,npair
+               write(iw,960)  i,blqm(i),blmm(i)
+            enddo
+         endif
+      end if
+CSN   do i=1,npair*3
+CSN    write(6,*)'linkge(',i,') is ',linkge(i)
+CSN   end do
+C
+      Return
+c
+  910 FORMAT(15X,'*** ERROR IN LINK SPECIFICATION *** ',/
+     *   15X,' QMMM REQUIRES at least one QM atom')
+  915 FORMAT(15X,'*** ERROR IN LINK SPECIFICATION *** ',/
+     *   15X,' QMMM REQUIRES to specify SIMOMM or IMOMM')
+  920 FORMAT(15X,'*** ERROR IN LINK SPECIFICATION *** ',/
+     *   15X,' QMMM REQUIRES at least one Linkge')
+  930 FORMAT(/10x,a6,' LINKING SELECTED ',/)
+  935 FORMAT(/10X,'LINKING ATOM PAIRS'/10X,18(1H-)/
+     *   1X,10X,'NO',4X,'QM-ATOM',4X,'MM-ATOM')
+  936 format (10x,'ALL QM ATOMS',/10x,12(1H-))
+  940 FORMAT(6(7x,i4))
+  945 FORMAT(5x,i8,3x,i8,3x,i8)
+  950 format(/10x,'BRIDGE QM and MM BOND LENGTH FOR IMOMM RUN',/
+     *   10x,42(1H-)/,15x,'NO',6x,'QM REGION',6x,'MM REGION')
+  960 FORMAT(9x,i8,8x,f6.4,9x,f6.4)
+  970 format(/10X,'INACTIVE ATOMS IN MM REGION'/10X,27(1H-))
+      END
+c
+c     ###############################################################
+c     ##                                                           ##
+c     ##  program newton  --  perform TNCG Cartesian optimization  ##
+c     ##                                                           ##
+c     ###############################################################
+c
+c
+c     "newton" performs an energy minimization in Cartesian
+c     coordinate space using a truncated Newton method
+c
+c
+cjrs
+c      program newton
+cjrs
+C*MODULE MOMM1    *DECK RXNTNEWTX
+C> @brief    TNCG cartesian optimization for reaxff
+C>
+C> @details  truncated newton conjugate gradient (TNCG) cartesian optimization for reaxff
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+CSN   subroutine tnewtx(mode,method,grdmin)
+      subroutine rxntnewtx
+CSN   implicit double precision(a-h,o-z)
+      include 'cbka.blk'
+      include 'cbkm.blk'
+      include 'opt.blk'
+cjrs
+c -- New COMMON between TOYS and Tinker only
+c -- New COMMON between RXNTOY and REAXFF only
+CSN   real*8 teg
+c      integer MxAtm
+c      real*8 Energy,Eg(*)
+      PARAMETER (MXATM=2000,MAXLNK=300,MAXR1=2000,MXRT=100)
+      parameter(maxatm=2000)
+      PARAMETER (ANG2BHR=1.889725989D+00,
+     *           BHR2ANG=0.52917724924D+00,
+     *           CMA2HB=8.432969D-4,zzero=0.0D+00)
+      PARAMETER (MXAO=8192)
+      dimension dff(3,mxatm)
+      dimension ffanam(mxatm)
+      dimension fzmass(mxatm)
+      dimension ffzan(maxatm)
+CSN   integer n,type
+      real*8 x,y,z
+      common /atomst/
+     *        x(maxatm),y(maxatm),z(maxatm),n,type(maxatm)
+      COMMON /INFOA / NATFF,ICH,MUL,NUM,NQMT,NE,NAFF,NB,
+     *                ZAN(MAXATM),FFC(3,MAXATM),IAN(MAXATM)
+      COMMON /FUNCT / ENERGY,EG(3*MXATM)
+      COMMON /MASSES/ ZMASS(MXATM)
+      COMMON /RUNLAB/ TITLE(10),ANAM(MXATM),BNAM(MXATM),BFLAB(MXAO)
+      COMMON /TGRAD/ TEG(3*MAXATM)
+
+c     integer nd
+cjrs
+      double precision minimum
+      LOGICAL master,GOPARR,DSKWRK,MASWRK,simomm,imomm
+      DOUBLE PRECISION LINK,BLQM,BLMM
+      CHARACTER*10 NAME,UATOM,blankk
+      CHARACTER*2 QAN(MAXATM)
+
+      dimension xx(3*maxatm)
+      dimension csave(maxatm,3)
+      dimension imovesave(maxatm)
+      DIMENSION ITMPLNK(3*MAXLNK)
+c
+      COMMON /COORDN/ UZNUC(MXATM),CUNIQ(MXATM,3),NATREL,UATOM(MXATM)
+      COMMON /ENRGYS/ ENUCR,EELCT,ETOT,SZ,SZZ,ECORE,ESCF,EERD,E1,E2,
+     *                VNE,VEE,VTOT,TKIN,ESTATE(MXRT),STATN,EDFT(2)
+      COMMON /PAR   / ME,MASTER,NPROC,IBTYP,IPTIM,GOPARR,DSKWRK,MASWRK
+      COMMON /QMMM1/ IMOMM,SIMOMM,NPAIR,NSEQ
+      COMMON /QMMM2/ IQMATM(MAXR1)
+      COMMON /QMMM3/ LINKGE(3*MAXLNK),BLQM(MAXLNK),BLMM(MAXLNK)
+CSN
+      write(6,*)'inside rxntnewtx'
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = x(i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = y(i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = z(i)
+CSN      end if
+CSN   end do
+C
+CSN   do i=1,na
+CSN    write(6,*)'imoves(',i,') is ',imoves(i)
+CSN   end do
+c
+CSN   do i=1,na
+CSN    write(6,*)'imove(',i,') is ',imove(i)
+CSN   end do
+c
+c replace MM atoms with analogous QM atoms
+c
+      do i=1,nseq
+        c(iqmatm(i),1)=ffc(1,i)*BHR2ANG
+        c(iqmatm(i),2)=ffc(2,i)*BHR2ANG
+        c(iqmatm(i),3)=ffc(3,i)*BHR2ANG
+CSN     write(6,*)'iqmatm(',i,') is ',iqmatm(i)
+CSN     write(6,*) c(iqmatm(i),1),c(iqmatm(i),2),c(iqmatm(i),3)
+      end do
+c
+c allow paired atoms to move
+c
+      if (imomm) then
+         do i=1,npair
+              imove(linkge(i*3))=1
+         enddo
+      endif
+c
+c save x,y,z coordinates
+c
+CSN   nvarr = 0
+CSN   nn = 0
+CSN   do i=1,na
+CSN      if (imove(i).eq.1) then
+CSN         nn = nn + 1
+CSN         nvarr = nvarr + 1
+CSN         xx(nvarr) = c(nn,1)
+CSN         nvarr = nvarr + 1
+CSN         xx(nvarr) = c(nn,2)
+CSN         nvarr = nvarr + 1
+CSN         xx(nvarr) = c(nn,3)
+CSN      end if
+CSN   end do
+c
+c save c() coordinates and atom names
+c
+      do i=1,na
+            csave(i,1) = c(i,1)
+            csave(i,2) = c(i,2)
+            csave(i,3) = c(i,3)
+            imovesave(i) = imove(i)
+            qan(i) = qa(i)
+CSN         write(6,*)'imove(',i,') is ',imove(i)
+CSN         write(6,*)'imovesave(',i,') is ',imovesave(i)
+      end do
+c
+c save npair imove=0 info
+
+c save anam() or atom names
+c
+      do i=1,natff
+            ffanam(i) = anam(i)
+            ffzan(i)  = zan(i)
+            fzmass(i) = zmass(i)
+      end do
+
+CSN   write(6,*)'after setting npair imovesave'
+CSN   do i=1,na
+CSN         write(6,*)'imove(',i,') is ',imove(i)
+CSN         write(6,*)'imovesave(',i,') is ',imovesave(i)
+CSN   end do
+c
+c call ff subroutine to obtain gradients for MM region with QM atoms frozen
+c
+
+      qr = '2'
+CSN   write(6,*)'qr is ',qr
+      write(6,*)'QM+MM region: MM energy, gradients, and geometry'
+      write(6,*)'QM region coordinates are frozen'
+CSN   write(6,*)'call ffhess'
+      call ffhess
+c
+c save gradients from frozen coordinate optimization run
+c
+      write(6,*)'MM gradients saved'
+      do i=1,na
+         do j=1,3
+            dff(j,i) = d(j,i)
+CSN        write(6,*)'dff(',j,i,') is ',dff(j,i)
+         end do
+      end do
+c
+c save FF coordinates
+c
+      do i=1,na
+            csave(i,1) = c(i,1)
+            csave(i,2) = c(i,2)
+            csave(i,3) = c(i,3)
+CSN         imovesave(i) = imove(i)
+CSN         qan(i) = qa(i)
+      end do
+
+c
+c reset FF calculation coordinates info for MM region only
+c all MM region coordinates are not frozen
+c
+      nvarr = 0
+      do i = 1, na
+         imove(i) = imovesave(i)
+         if (imove(i).eq.1) then
+            nvarr = nvarr + 1
+            c(nvarr,1) = c(i,1)
+            c(nvarr,2) = c(i,2)
+            c(nvarr,3) = c(i,3)
+            imove(nvarr) = 1
+            qa(nvarr) = qa(i)
+         end if
+      end do
+CSN   write(6,*)'na is ',na
+CSN   write(6,*)'nvarr is ',nvarr
+      nasave = na
+      na = nvarr
+CSN   write(6,*)'after nvarr set, na is ',na
+c
+c     make the call to the optimization routine
+c
+CSN   call tncg (mode,method,nvar,xx,minimum,grdmin,
+CSN  &               newton1,newton2,writeout)
+CSN -- call ffhess due to gradient passing in EG(*) form
+CSN
+c calculates energy of only MM region
+c
+
+      qr = '1'
+CSN   write(6,*)'qr is ',qr
+CSN   write(6,*)'call ffhess'
+      write(6,*)'MM region: MM energy and geometry'
+      call ffhess
+CSN   write(6,*)'after call ffhess'
+
+CSN
+CSN   call minim
+CSN need to skip read in of initial coordinates
+c
+c     untranslate the final coordinates for active atoms
+c
+c     reset na to original nnumber of atoms
+c
+CSN   write(6,*)'after ffhess, na is ',na
+      nvarr = 0
+CSN   nn = 0
+      na = nasave
+CSN   write(6,*)'after nasave, na is ',na
+c
+c     reset final coordinates using imove
+c     1. according to FF energy coordinates
+c     2. according to saved FF optimization coordinates 
+c
+      do i=1,na
+            c(i,1) = csave(i,1)
+            c(i,2) = csave(i,2)
+            c(i,3) = csave(i,3)
+            imove(i) = imovesave(i)
+CSN         write(6,77) i,qa(i)
+            qa(i) = qan(i)
+CSN         write(6,78) i,qan(i)
+CSN         write(6,77) i,qa(i)
+      end do
+CSN77 format(1x,'qa(',i3,') is ',a2)
+CSN78 format(1x,'qan(',i3,') is ',a2)
+c
+      write(6,*)'  '
+c
+CSN
+
+c
+c  restore anam values for QM atom names
+c
+      do i=1,natff
+            anam(i)  = ffanam(i)
+            zan(i)   = ffzan(i)
+            zmass(i) = fzmass(i)
+      end do
+c
+      if (imomm) then
+         do i=1,npair
+              imove(linkge(i*3))=0
+         enddo
+      endif
+CSN
+      do i = 1, na
+         x(i) = c(i,1)
+         y(i) = c(i,2)
+         z(i) = c(i,3)
+      end do
+CSN
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         x(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         y(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         z(i) = xx(nvar)
+CSN      end if
+CSN   end do
+c
+c     write out final function value and gradient
+c
+CSN   call encalc
+CSN gets minimization energy and related gradients
+CSN encalc does this in ReaxFF
+CSN   call gradient (minimum,derivs)
+      gnorm = 0.0d0
+      nvar = 0
+      do i = 1, na
+CSN      if (use(i)) then
+         if (imove(i).eq.1) then
+            do j = 1, 3
+               nvar = nvar + 1
+               gnorm = gnorm + dff(j,i)**2
+            end do
+         end if
+      end do
+      write(6,*)'gnorm is ',gnorm
+C  CHC
+C      write(*,*)
+c      write(*,*) ' Tinker Gradient Components (kcal/mole/ang) '
+c      do 200 i=1,n
+c 200        write(*,*) derivs(1,i),derivs(2,i),derivs(3,i)
+c      write(*,*)
+c
+c Put Tinker derivs into TEG array to pass back to TOYS
+c
+      nd=1
+      do 800 i=1,na
+         do 810  j=1,3
+            teg(nd)=dff(j,i)
+ 810        nd=nd+1
+ 800  continue
+c             
+cjrs
+c
+      minimum = estrc
+      gnorm = sqrt(gnorm)
+      grms = gnorm / sqrt(dble(nvar/3))  !true one
+CSN   grms = gnorm
+C     Adding the two energy
+CSN   write(6,*)'energy is ',energy
+CSN   write(6,*)'minimum is ',minimum/627.5095d+00
+CSN   Energy=Energy+minimum/627.5095d+00
+      Energy=ETOT+minimum/627.5095d+00
+
+      if (grms .gt. 0.0001d0) then
+         if (maswrk) write (6,80)  minimum,grms,gnorm,Energy
+   80    format (/,'           MM Energy (kcal/mol)  : ',f20.10,
+     &           /,'           MM RMS Gradient       : ',f20.10,
+     &           /,'           MM Gradient Norm      : ',f20.10,
+     &           /,'           QM+MM Energy (Hartree): ',f20.10,/)
+      else
+         if (maswrk) write (6,90)  minimum,grms,gnorm,Energy
+   90    format (/,'           MM Energy (kcal/mol)  : ',f20.10,
+     &           /,'           MM RMS Gradient       : ',f20.10,
+     &           /,'           MM Gradient Norm      : ',f20.10,
+     &           /,'           QM+MM Energy (Hartree): ',f20.10,/)
+      end if
+c
+c     write the final coordinates into a file
+c
+cjrs redirect this to the GAMESS output file
+c
+c      imin = freeunit ()
+c      open (unit=imin,file=minfile,status='old')
+c      rewind (unit=imin)
+c
+CSN   if (maswrk) call prtxyz (iout)
+c
+c      close (unit=imin)
+c
+c     perform any final tasks before program exit
+c
+c  -- Tinker final renamed finalt
+c     call finalt
+cjrs  don't forget, this is a subroutine now
+c
+      return
+      end
+c
+c
+c     ###############################################################
+c     ##                                                           ##
+c     ##  function newton1  --  energy/gradient values for newton  ##
+c     ##                                                           ##
+c     ###############################################################
+c
+c
+c     "newton1" is a service routine that computes the energy
+c     and gradient for truncated Newton optimization in Cartesian
+c     coordinate space
+c
+c
+CSN   function newton1 (xx,g)
+CSN   implicit none CSN   include 'sizes.i'
+CSN   include 'atoms.i'
+CSN   include 'usage.i'
+CSN   integer i,nvar
+CSN   real*8 newton1,e,derivs(3,maxatm) 
+CSN   real*8 xx(maxvar),g(maxvar)
+CSN   real*8 newton1,e,derivs(3,maxatm) 
+c     translate optimization parameters to atomic coordinates
+c
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         x(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         y(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         z(i) = xx(nvar)
+CSN      end if
+CSN   end do
+c
+c     compute and store the energy and gradient
+c
+CSN   call gradient (e,derivs)
+CSN   newton1 = e
+c
+c     store atom gradients as optimization gradient, also
+c     translate the coordinates of each active atom; the
+c     latter may be needed when using periodic boundaries
+c
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = x(i)
+CSN         g(nvar) = derivs(1,i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = y(i)
+CSN         g(nvar) = derivs(2,i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = z(i)
+CSN         g(nvar) = derivs(3,i)
+CSN      end if
+CSN   end do
+CSN   return
+CSN   end
+CSN
+CSN ----------------
+CSN   SUBROUTINE TNEWTX(MODE,METHOD,GRDMIN)
+CSN   CHARACTER*6 MODE,METHOD
+CSN   double precision grdmin
+CSN   WRITE(6,*) MODE,METHOD,GRDMIN
+CSN   RETURN
+CSN   END
+CSN ----------------
+c
+c
+c     #########################################################
+c     ##                                                     ##
+c     ##  subroutine newton2  --  Hessian values for newton  ##
+c     ##                                                     ##
+c     #########################################################
+c
+c
+c     "newton2" is a service routine that computes the sparse
+c     matrix Hessian elements for truncated Newton optimization
+c     in Cartesian coordinate space
+c
+c
+CSN   subroutine newton2 (mode,xx,h,hinit,hstop,hindex,hdiag)
+CSN   implicit none
+CSN   include 'sizes.i'
+CSN   include 'atoms.i'
+CSN   include 'usage.i'
+CSN   integer i,j,k,nvar
+CSN   integer hinit(maxvar),hstop(maxvar)
+CSN   integer hindex(maxhess)
+CSN   integer hvar(maxvar),huse(maxvar)
+CSN   real*8 xx(maxvar),hdiag(maxvar),h(maxhess)
+CSN   character*4 mode
+c
+c
+c     translate optimization parameters to atomic coordinates
+c
+CSN   if (mode .eq. 'none')  return
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         x(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         y(i) = xx(nvar)
+CSN         nvar = nvar + 1
+CSN         z(i) = xx(nvar)
+CSN      end if
+CSN   end do
+c
+c     compute and store the Hessian elements
+c
+CSN   call hessian (h,hinit,hstop,hindex,hdiag)
+c
+c     transform the sparse Hessian to use only active atoms
+c
+CSN   nvar = 0
+CSN   if (nuse .ne. n) then
+CSN      do i = 1, n
+CSN         k = 3 * (i-1)
+CSN         if (use(i)) then
+CSN            do j = 1, 3
+CSN               nvar = nvar + 1
+CSN               hvar(nvar) = j + k
+CSN               huse(j+k) = nvar
+CSN            end do
+CSN         else
+CSN            do j = 1, 3
+CSN               huse(j+k) = 0
+CSN            end do
+CSN         end if
+CSN      end do
+CSN      do i = 1, nvar
+CSN         k = hvar(i)
+CSN         hinit(i) = hinit(k)
+CSN         hstop(i) = hstop(k)
+CSN         hdiag(i) = hdiag(k)
+CSN         do j = hinit(i), hstop(i)
+CSN            hindex(j) = huse(hindex(j))
+CSN         end do
+CSN      end do
+CSN   end if
+c
+c     translate the coordinates of each active atom;
+c     this may be needed when using periodic boundaries
+c
+CSN   nvar = 0
+CSN   do i = 1, n
+CSN      if (use(i)) then
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = x(i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = y(i)
+CSN         nvar = nvar + 1
+CSN         xx(nvar) = z(i)
+CSN      end if
+CSN   end do
+CSN   return
+CSN   end

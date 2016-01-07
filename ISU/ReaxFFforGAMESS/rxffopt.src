@@ -1,0 +1,3078 @@
+**********************************************************************
+*                                                                    *
+*     REAXFF Reactive force field program                            *
+*                                                                    *
+*     Developed and written by Adri van Duin, duin@wag.caltech.edu   *
+*                                                                    *
+*     Copyright (c) 2001-2010 California Institute of Technology     *
+*                                                                    *
+*     This is an open-source program. Feel free to modify its        *
+*     contents. Please keep me informed of any useful modification   *
+*     or addition that you made. Please do not distribute this       *
+*     program to others; if people are interested in obtaining       *
+*     a copy of this program let them contact me first.              *
+*                                                                    *
+**********************************************************************
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK FFOPT
+C> @brief    main driver for ReaxFF
+C>
+C> @details  main driver for ReaxFF, Reactive force field program 
+C>           This program runs the ReaxFF force field, which simulates
+C>           bond formation in larger MD simulations. ReaxFF accounts 
+C>           for accuracies at the quantum chemical level of theory
+C>           with the low computational cost of empirical force fields.
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine ffopt
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+C
+      character*33 qfile2
+      character*33 qfilh
+      logical hssend
+      REAL*8 X,Y,Z
+      logical imomm,simomm
+C
+      PARAMETER (NNAM=2,MXATM=2000,MXAO=8192,MAXATM=2000)
+C
+      DIMENSION QNAM(NNAM),KQNAM(NNAM),FFATM(32),AMS(106)
+C
+      COMMON /ATOMST/ X(MAXATM),Y(MAXATM),Z(MAXATM),N,TYPE(MAXATM)
+      COMMON /FUNCT / E,EG(3,MXATM)
+      COMMON /HSSCTL/ IHESSM,IHREP,HSSEND
+      COMMON /INFOA / NATTT,ICH,MUL,NUM,NQMT,NE,NAAA,NB,
+     *                ZAN(MXATM),FFC(3,MXATM),IAN(MXATM)
+      COMMON /IOFILE/ IR,IW,IP,IS,IPK,IDAF,NAV,IODA(950)
+      COMMON /MASSES/ ZMASS(MXATM)
+      COMMON /QMMM1/ IMOMM,SIMOMM,NPAIR,NSEQ
+      COMMON /TGRAD / TEG(3*MAXATM)
+      COMMON /TIMING/ CPU,WALL
+      COMMON /TINOPT/ MPARTI,MMONLY,TYPEMM,QMMM
+      COMMON /RUNLAB/ TITLE(10),ANAM(MXATM),BNAM(MXATM),BFLAB(MXAO)
+      COMMON /WFNOPT/ SCFTYP,VBTYP,DFTYPE,TDDFTYP,CITYP,CCTYP,
+     *                MPLEVL,MPCTYP
+C
+      DATA FFRXN1/8HFFRXN1  /
+      DATA QNAM /8HFFSEED  ,8HIFIOPT  /
+      DATA KQNAM/3,1/
+      DATA FFATM/8HH       ,8HHe      ,8HLi      ,8HBe      ,
+     *           8HB       ,8HC       ,8HN       ,8HO       ,
+     *           8HF       ,8HNe      ,8HNa      ,8HMg      ,
+     *           8HAl      ,8HSi      ,8HP       ,8HS       ,8HCl      ,
+     *           8HAr      ,8HK       ,8HCa      ,8HSc      ,8HTi      ,
+     *           8HV       ,8HCr      ,8HMn      ,8HFe      ,8HCo      ,
+     *           8HNi      ,8HCu      ,8HZn      ,8HGa      ,8HGe      /
+      DATA (AMS(I),I=1,54)  /                                        
+     *   1.007825D+00,4.0026D+00,7.01600D+00,9.01218D+00,11.00931D+00,
+     *   12.0D+00,14.00307D+00,15.99491D+00,18.99840D+00,19.99244D+00,
+     *   22.9898D+00,23.98504D+00,26.98153D+00,27.97693D+00,
+     *   30.97376D+00,31.97207D+00,34.96885D+00,39.948D+00,
+     *   38.96371D+00,39.96259D+00,44.95592D+00,47.90D+00,50.9440D+00,
+     *   51.9405D+00,54.9381D+00,55.9349D+00,58.9332D+00,57.9353D+00,
+     *   62.9298D+00,63.9291D+00,68.9257D+00,73.9219D+00,74.9216D+00,
+     *   79.9165D+00,78.9183D+00,83.9115D+00,
+     *   84.9117D+00,87.9056D+00,89.9054D+00,89.9043D+00,92.9060D+00,
+     *   97.9055D+00,97.0D+00,101.9037D+00,102.9048D+00,105.9032D+00,
+     *   106.9041D+00,113.9036D+00,114.9041D+00,119.9022D+00,
+     *   120.9038D+00,129.9067D+00,126.9044D+00,131.9042D+00/
+      DATA (AMS(I),I=55,106)  /
+     *   132.9054D+00,137.9052D+00,138.9063D+00,139.9054D+00, 
+     *   140.9076D+00,141.9077D+00,144.9127D+00,151.9197D+00,
+     *   152.9212D+00,157.9241D+00,158.9253D+00,163.9292D+00,
+     *   164.9303D+00,165.9303D+00,168.9342D+00,173.9389D+00,
+     *   174.9408D+00,179.9465D+00,180.9480D+00,183.9509D+00,
+     *   186.9557D+00,191.9615D+00,192.9629D+00,194.9648D+00,
+     *   196.9665D+00,201.9706D+00,
+     *   204.9744D+00,207.9766D+00,208.9804D+00,208.9824D+00,
+     *   209.9871D+00,222.0176D+00,
+     *   223.0197D+00,226.0254D+00,
+     *   227.0278D+00,232.0381D+00,231.0359D+00,238.0508D+00,
+     *   237.0482D+00,244.0642D+00,243.0614D+00,247.0703D+00,
+     *   247.0703D+00,251.0796D+00,252.0829D+00,257.0751D+00,
+     *   258.0986D+00,259.1009D+00,260.1053D+00,261.1087D+00,
+     *   2*0.0D+00/
+      DATA BLANK/8H        /
+**********************************************************************   
+*                                                                    *
+*     Optimization routines for the reactive MD-force field          *
+*                                                                    *
+**********************************************************************   
+CSN   write(6,*)'ffopt 1'
+CSN   write(6,111) scftyp
+  111 format(1x,'scftyp is ',a8)
+CSN   write(6,*)'ffopt 1'
+      call timit(0)
+CSN   write(6,*)'ffopt 2'
+CSN   write(6,*)'natrx is ',natrx
+      ustime=zero
+      systime=zero
+      big=1d+30
+      starttime=secnds(0.0)  
+      vpmax=zero
+      vpmin=zero
+      ifseed=0
+      ifiopt=0
+      JRET=0
+
+      i=0
+      ii=0
+CSN   write(6,*)'ffopt 3'
+      call flshbf(6)
+CSN   write(6,*)'ffopt 4'
+CSN   nat=mxatm
+CSN   write(6,*)'ffopt 1.02'
+CSN   write(6,111) scftyp
+CSN   write(6,*)'nat is ',nat
+CSN   write(6,*)'nattt is ',nattt
+CSN   DO i=1,nat
+CSN    DO ii=1,nat
+      if(nseq.eq.0) then
+      DO i=1,3
+       DO ii=1,mxatm
+        FFC(i,ii)=0.0d+00
+         EG(i,ii)=0.0d+00
+       END DO
+CSN   write(6,*)'ffoptr 1.024'
+CSN   write(6,111) scftyp
+      END DO
+      end if
+CSN   write(6,*)'ffoptr 1.025'
+CSN   write(6,111) scftyp
+      call flshbf(6)
+CSN   write(6,*)'ffoptr 1.03'
+CSN   write(6,111) scftyp
+CSN   DO I=1,3
+C       DO II=1,NA
+CSN       EG(I,II) =D(I,II)
+C         C(II,I)=FFC(I,II)
+C       END DO
+CSN   END DO
+      CALL NAMEIO(IR,JRET,FFRXN1,NNAM,QNAM,KQNAM,FFSEED,IFIOPT,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0)
+c     dseed = ffseed 
+      dseed = 123457.d0
+      dseed = cpu 
+CSN   write(6,*)'what is dseed and wall? ',dseed,wall
+CSN   open (35,file='/u1/sean/gamessnew/ffparams/fort.35',
+CSN  *       status='unknown')
+CSN   read (35,*)dseed
+CSN   close (35)
+CSN   write(6,*)'what is dseed? ',dseed 
+      if(jret.eq.1) then
+       CALL SEQOPN(335,'FORT35','UNKNOWN',.FALSE.,'FORMATTED')
+       read (335,*)dseed
+       CALL SEQCLO(335,'KEEP')
+      end if
+
+      iagain=0
+CSN
+      i1=0
+      i2=0
+CSN   write(6,*)'mbond is',mbond
+CSN   write(6,*)'nat is',nat
+      do i1=1,natf
+      do i2=1,mbond+3
+      ia(i1,i2)=0
+      iag(i1,i2)=0
+      end do
+      end do
+      iopt = ifiopt
+CSN   open (20,file='/u1/sean/gamessnew/ffparams/fort.20',
+CSN  *       status='unknown')
+CSN   read (20,1000)iopt
+CSN   write(6,*)'iopt is ',iopt
+
+C Need to determine conditional for reading iopt from unit 20
+      CALL SEQOPN(320,'FORT20','UNKNOWN',.FALSE.,'FORMATTED')
+
+      if (iopt.eq.0) then
+CSN    write(6,*)'calling version'
+       call version
+CSN    write(6,*)'1 calling reac'
+       call reac
+CSN    write(6,*)'calling calcerr'
+       call calcerr(1)
+       if (nsurp.ge.2) then
+CSN    rewind (90)
+CSN    rewind (98)
+       CALL SEQREW(390)
+       CALL SEQREW(398)
+       do i1=1,nmollset
+CSN    write(6,*)'calling extractgeo'
+       call extractgeo(i1)
+CSN    write(6,*)'calling writebgf'
+CSN    call writebgf(90)
+       call writebgf(390)
+CSN    write(6,*)'calling writegeo'
+CSN    call writegeo(98)
+       call writegeo(398)
+ 
+       if (nsurp.eq.3) then
+       qfilh=qfile(i1)
+       qfile2=qfile(i1)
+       if (imodfile.eq.0) then
+       istart=1
+       qstrana1(1:33)=qfilh
+       call stranal(istart,iend,vout,iout,1)
+       qfile2=qfilh(istart:iend-1)//".bgf"
+       end if
+CSN    open (88,file='/u1/sean/gamessnew/ffparams/qfile2',
+CSN  *       status='unknown')
+CSN    if (imodfile.eq.0) call writebgf(88)
+CSN    if (imodfile.eq.1.and.ngeofor.eq.1) call writebgf(88)
+CSN    close (88)
+
+      CALL SEQOPN(388,'FORT.88','UNKNOWN',.FALSE.,'FORMATTED')
+       if (imodfile.eq.0) call writebgf(388)
+       if (imodfile.eq.1.and.ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+       if (imodfile.eq.0) qfile2=qfilh(istart:iend-1)//".geo"
+CSN    open (88,file='/u1/sean/gamessnew/ffparams/qfile2',
+CSN  *       status='unknown')
+CSN    if (imodfile.eq.0) call writegeo(88)
+CSN    if (imodfile.eq.1.and.ngeofor.eq.0) call writegeo(88)
+CSN    close (88)
+
+      CALL SEQOPN(388,'FORT.88','UNKNOWN',.FALSE.,'FORMATTED')
+       if (imodfile.eq.0) call writegeo(388)
+       if (imodfile.eq.1.and.ngeofor.eq.0) call writegeo(388)
+      CALL SEQCLO(388,'KEEP')
+
+       end if
+       end do
+       end if
+ 
+       write (*,*) 'Normal end of MD-simulation'
+c      stop 
+      end if
+
+      if (iopt.eq.2) then !force field extrapolation
+       call ffext
+CSN    stop 'Normal end of program; extrapolated force field in unit 13'
+       write(6,*) 'Normal end of program;' 
+       write(6,*) 'extrapolated force field in unit 13'
+       CALL ABRT
+      end if
+
+CSN   write(6,*)'calling version'
+      call version
+CSN   write(6,*)'calling readc'
+      call readc
+CSN   write(6,*)'calling ffin2'
+CSN    open (4,file='/u1/sean/gamessnew/ffparams/fort.4',
+CSN  *       status='unknown')
+CSN   rewind(4)
+CSN   write(6,*)'calling ffin2 1'
+CSN   call ffin2(4)
+CSN   close(4)
+CSN   write(6,*)'after ffin2 fort.4'
+
+      CALL SEQOPN(304,'FORT4','UNKNOWN',.FALSE.,'FORMATTED')
+      CALL SEQREW(304)
+      call ffin2(304)
+      CALL SEQCLO(304,'KEEP')
+
+
+*     read (21,1100)ichn(1),ichn(2),ichn(3),vchange,vpmax,vpmin
+*     read (21,*)ichn(1),ichn(2),ichn(3),vchange,vpmax,vpmin
+CSN   read (21,'(a200)')qstrana1
+      read (321,'(a200)')qstrana1
+CSN   write(6,*)'after read 21'
+
+      istart=1
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(1)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(2)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(3)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vchange=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmax=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmin=vout
+      if (vpmax.lt.vpmin) then
+      vph=vpmax
+      vpmax=vpmin
+      vpmin=vph
+      end if
+      if (vchange.lt.0.00001d0) vchange=0.00001d0
+      if (vpmax.lt.0.001d0.and.vpmax.gt.-0.001d0)
+     * vpmax=25000.0d0
+      if (vpmin.lt.0.001d0.and.vpmin.gt.-0.001d0) 
+     * vpmin=-25000.0d0
+      icount=0
+      valpar=fpar(ichn(1),ichn(2),ichn(3))
+      call optdat
+    9 change=parc1*vchange
+CSN   open (25,file='/u1/sean/gamessnew/ffparams/fort.25',
+CSN  *      status='unknown')
+CSN   write (25,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+CSN  $vpmax,vpmin
+CSN   write(6,*)'after write 25'
+
+CSN   close (25)
+
+      CALL SEQOPN(325,'FORT25','UNKNOWN',.FALSE.,'FORMATTED')
+      if(jret.eq.1) then
+       write (325,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+     $ vpmax,vpmin
+      end if
+      CALL SEQCLO(325,'KEEP')
+
+CSN   call ffchng(1,4,big,-big)
+      call ffchng(1,304,big,-big)
+
+      iflga=0
+      do i1=1,3
+CSN   call ffchng(i1,4,big,-big)
+      call ffchng(i1,304,big,-big)
+CSN   write(6,*)'1.1 calling reac after ffchng'
+      call reac
+      call increm
+      call rewind
+*     call bepsdy(i1)
+      call calcerr(i1)
+CSN   write(6,*)'after 1.1 calling reac after ffchng'
+CSN   write(6,*)'after calling increm, rewind, bepsdy, calcerr'
+      end do
+      errsav=sdy(3)
+      call kmin(vpmax,vpmin)
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+      iflga=1
+CSN   write(6,*)'2 calling reac'
+      call reac
+CSN   write(6,*)'calling increm'
+      call increm
+CSN   write(6,*)'calling rewind'
+      call rewind
+CSN   write(6,*)'calling rewind2'
+      call rewind2
+CSN   write(6,*)'calling bepsdy'
+*     call bepsdy(3)
+CSN   write(6,*)'calling calcerr'
+      call calcerr(3)
+      if (sdy(3).gt.errsav+accincr.and.icount.lt.4) then     !Do not accept parameter change
+CSN   call ffchng(3,4,big,-big)
+      call ffchng(3,304,big,-big)
+CSN   if (sdy(1).lt.errsav) call ffchng(1,4,vpmax,vpmin)
+CSN   if (sdy(2).lt.errsav) call ffchng(2,4,vpmax,vpmin)
+      if (sdy(1).lt.errsav) call ffchng(1,304,vpmax,vpmin)
+      if (sdy(2).lt.errsav) call ffchng(2,304,vpmax,vpmin)
+      if (sdy(1).gt.errsav.and.sdy(2).gt.errsav) then
+      vchange=vchange*0.50d0
+      icount=icount+1
+      goto 9
+      end if
+      end if
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.0) call cpfile(398,3)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.1) call cpfile(390,3)
+      if (nsurp.ge.2) then
+CSN   rewind (90)
+CSN   rewind (98)
+      CALL SEQREW (390)
+      CALL SEQREW (398)
+
+CSN   write(6,*)'in nmollset loop'
+      do i1=1,nmollset
+      call extractgeo(i1)
+CSN   call writebgf(90)
+CSN   call writegeo(98)
+      call writebgf(390)
+      call writegeo(398)
+
+      if (imodfile.eq.1) then
+
+CSN   open (88,file='/u1/sean/gamessnew/ffparams/qfile(i1)',
+CSN  *      status='unknown')
+CSN   if (ngeofor.eq.0) call writegeo(88)
+CSN   if (ngeofor.eq.1) call writebgf(88)
+CSN   close(88)
+ 
+      CALL SEQOPN(388,'FORT:88','UNKNOWN',.FALSE.,'FORMATTED')
+      if (ngeofor.eq.0) call writegeo(388)
+      if (ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+      end if
+      end do
+CSN   write(6,*)'after nmollset loop'
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+
+      end if
+
+      call ffsav
+   10 continue
+
+CSN   write(6,*)'qstrana1 is ',qstrana1
+CSN   write(6,*)'write to 21'
+      read (21,'(a200)',end=20,err=20)qstrana1
+CSN   write(6,*)'after write 21'
+
+      istart=1
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(1)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(2)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(3)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vchange=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmax=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmin=vout
+      if (vpmax.lt.vpmin) then
+      vph=vpmax
+      vpmax=vpmin
+      vpmin=vph
+      end if
+      if (vpmax.lt.0.001d0.and.vpmax.gt.-0.001d0) 
+     * vpmax=25000.0d0
+      if (vpmin.lt.0.001d0.and.vpmin.gt.-0.001d0) 
+     * vpmin=-25000.0d0
+      if (vchange.lt.0.00001d0) vchange=0.00001d0
+      iagain=0
+      icount=0
+      valpar=fpar(ichn(1),ichn(2),ichn(3))
+   11 change=vchange*parc1
+CSN   open (25,file='/u1/sean/gamessnew/ffparams/fort.25',
+CSN  *      status='unknown')
+
+CSN   write(6,*)'write to 25'
+CSN   write (25,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+CSN  $vpmax,vpmin
+CSN   write(6,*)'after write to 25'
+CSN   close (25)
+
+      CALL SEQOPN(325,'FORT25','UNKNOWN',.FALSE.,'FORMATTED')
+      write (325,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+     $vpmax,vpmin
+      CALL SEQCLO(325,'KEEP')
+
+      iflga=0
+      do i1=1,2+ingeo
+*     do i1=1,2
+      if (i1.eq.3) iflga=1
+CSN   call ffchng(i1,4,big,-big)
+      call ffchng(i1,304,big,-big)
+      call reac
+      call increm 
+      call rewind
+*     call bepsdy(i1)
+      call calcerr(i1)
+      end do
+      errsav=sdy(3)
+      call kmin(vpmax,vpmin)
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+      call rewind2
+      call reac
+      call rewind
+      call increm 
+*     call bepsdy(3)
+      call calcerr(3)
+      if (sdy(3).gt.errsav+accincr.and.icount.lt.4) then     !Do not accept parameter change
+CSN   call ffchng(3,4,big,-big)
+      call ffchng(3,304,big,-big)
+CSN   if (sdy(1).lt.errsav) call ffchng(1,4,vpmax,vpmin)
+CSN   if (sdy(2).lt.errsav) call ffchng(2,4,vpmax,vpmin)
+      if (sdy(1).lt.errsav) call ffchng(1,304,vpmax,vpmin)
+      if (sdy(2).lt.errsav) call ffchng(2,304,vpmax,vpmin)
+      if (sdy(1).gt.errsav.and.sdy(2).gt.errsav) then
+      vchange=vchange*0.50d0
+      icount=icount+1
+      goto 11
+      end if
+      end if
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      if (nsurp.ge.2) then
+CSN   rewind (90)
+CSN   rewind (98)
+      CALL SEQREW (390)
+      CALL SEQREW (398)
+
+CSN   write(6,*)'in nmollset 2'
+      do i1=1,nmollset
+      call extractgeo(i1)
+CSN   call writebgf(90)
+CSN   call writegeo(98)
+      call writebgf(390)
+      call writegeo(398)
+      if (imodfile.eq.1) then
+CSN   open (88,file='/u1/sean/gamessnew/ffparams/qfile(i1)',
+CSN  *      status='unknown')
+CSN   if (ngeofor.eq.0) call writegeo(88)
+CSN   if (ngeofor.eq.1) call writebgf(88)
+CSN   close(88)
+
+      CALL SEQOPN(388,'FORT:88','UNKNOWN',.FALSE.,'FORMATTED')
+      if (ngeofor.eq.0) call writegeo(388)
+      if (ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+      end if
+      end do
+CSN   write(6,*)'after nmollset 2 loop'
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      end if
+      call ffsav
+      goto 10
+   20 continue
+CSN   write(6,*) 'after 20 continue'
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+CSN   write(6,*)'after call ffchng'
+      call finrep
+CSN   write(6,*)'after call finrep'      
+CSN
+      I=0
+      J=0
+      K=0
+      II=0
+      NATTT=NA
+CSN   E=ESTRC
+      E=ESTRC/627.5095d+00
+CSN   i=0
+CSN   ii=0
+CSN   do i=1,3
+CSN    do ii=1,na
+CSN     ctemp(i,ii)=c(ii,i)
+CSN    end do
+CSN   end do
+      DO I=1,NA
+        DO II=1,3
+          K=K+1
+          EG(II,I) =D(II,I)
+          FFC(II,I)=C(I,II)
+          TEG(K)=EG(II,I)
+          if (ii.eq.1) x(i) = ffc(ii,i)
+          if (ii.eq.2) y(i) = ffc(ii,i)
+          if (ii.eq.3) z(i) = ffc(ii,i)
+CSN       write(6,*)'ffc(',ii,',',i,') is ',ffc(ii,i)
+CSN       write(6,*)'x(',i,') is ',x(i)
+CSN       write(6,*)'y(',i,') is ',y(i)
+CSN       write(6,*)'z(',i,') is ',z(i)
+        END DO
+      END DO
+CSN   write(6,*)'in ffopt'
+      DO J=1,NA
+        IF(QA(J).EQ.'H ') ANAM(J)=FFATM(1)
+        IF(QA(J).EQ.'He') ANAM(J)=FFATM(2)
+        IF(QA(J).EQ.'Li') ANAM(J)=FFATM(3)
+        IF(QA(J).EQ.'Be') ANAM(J)=FFATM(4)
+        IF(QA(J).EQ.'B ') ANAM(J)=FFATM(5)
+        IF(QA(J).EQ.'C ') ANAM(J)=FFATM(6)
+        IF(QA(J).EQ.'N ') ANAM(J)=FFATM(7)
+        IF(QA(J).EQ.'O ') ANAM(J)=FFATM(8)
+        IF(QA(J).EQ.'F ') ANAM(J)=FFATM(9)
+        IF(QA(J).EQ.'Ne') ANAM(J)=FFATM(10)
+        IF(QA(J).EQ.'Na') ANAM(J)=FFATM(11)
+        IF(QA(J).EQ.'Mg') ANAM(J)=FFATM(12)
+        IF(QA(J).EQ.'Al') ANAM(J)=FFATM(13)
+        IF(QA(J).EQ.'Si') ANAM(J)=FFATM(14)
+        IF(QA(J).EQ.'P ') ANAM(J)=FFATM(15)
+        IF(QA(J).EQ.'S ') ANAM(J)=FFATM(16)
+        IF(QA(J).EQ.'Cl') ANAM(J)=FFATM(17)
+        IF(QA(J).EQ.'Ar') ANAM(J)=FFATM(18)
+        IF(QA(J).EQ.'K ') ANAM(J)=FFATM(19)
+        IF(QA(J).EQ.'Ca') ANAM(J)=FFATM(20)
+        IF(QA(J).EQ.'Sc') ANAM(J)=FFATM(21)
+        IF(QA(J).EQ.'Ti') ANAM(J)=FFATM(22)
+        IF(QA(J).EQ.'Ni') ANAM(J)=FFATM(28)
+        BNAM(J)=BLANK
+CSN     write(6,77) j,anam(j)
+      END DO
+CSN77 format(1x,'anam(',i3,') is ',a8)
+      JJ=0
+      DO JJ=1,NA
+        IF(QA(JJ).EQ.'H ') ZMASS(JJ)=AMS(1)
+        IF(QA(JJ).EQ.'He') ZMASS(JJ)=AMS(2)
+        IF(QA(JJ).EQ.'Li') ZMASS(JJ)=AMS(3)
+        IF(QA(JJ).EQ.'Be') ZMASS(JJ)=AMS(4)
+        IF(QA(JJ).EQ.'B ') ZMASS(JJ)=AMS(5)
+        IF(QA(JJ).EQ.'C ') ZMASS(JJ)=AMS(6)
+        IF(QA(JJ).EQ.'N ') ZMASS(JJ)=AMS(7)
+        IF(QA(JJ).EQ.'O ') ZMASS(JJ)=AMS(8)
+        IF(QA(JJ).EQ.'F ') ZMASS(JJ)=AMS(9)
+        IF(QA(JJ).EQ.'Ne') ZMASS(JJ)=AMS(10)
+        IF(QA(JJ).EQ.'Na') ZMASS(JJ)=AMS(11)
+        IF(QA(JJ).EQ.'Mg') ZMASS(JJ)=AMS(12)
+        IF(QA(JJ).EQ.'Al') ZMASS(JJ)=AMS(13)
+        IF(QA(JJ).EQ.'Si') ZMASS(JJ)=AMS(14)
+        IF(QA(JJ).EQ.'P ') ZMASS(JJ)=AMS(15)
+        IF(QA(JJ).EQ.'S ') ZMASS(JJ)=AMS(16)
+        IF(QA(JJ).EQ.'Cl') ZMASS(JJ)=AMS(17)
+        IF(QA(JJ).EQ.'Ar') ZMASS(JJ)=AMS(18)
+        IF(QA(JJ).EQ.'K ') ZMASS(JJ)=AMS(19)
+        IF(QA(JJ).EQ.'Ca') ZMASS(JJ)=AMS(20)
+        IF(QA(JJ).EQ.'Sc') ZMASS(JJ)=AMS(21)
+        IF(QA(JJ).EQ.'Ti') ZMASS(JJ)=AMS(22)
+        IF(QA(JJ).EQ.'Ni') ZMASS(JJ)=AMS(28)
+      END DO
+      JJ=0
+      DO JJ=1,NA
+        IF(QA(JJ).EQ.'H ') ZAN(JJ)=1.0d+00
+        IF(QA(JJ).EQ.'He') ZAN(JJ)=2.0d+00
+        IF(QA(JJ).EQ.'Li') ZAN(JJ)=3.0d+00
+        IF(QA(JJ).EQ.'Be') ZAN(JJ)=4.0d+00
+        IF(QA(JJ).EQ.'B ') ZAN(JJ)=5.0d+00
+        IF(QA(JJ).EQ.'C ') ZAN(JJ)=6.0d+00
+        IF(QA(JJ).EQ.'N ') ZAN(JJ)=7.0d+00
+        IF(QA(JJ).EQ.'O ') ZAN(JJ)=8.0d+00
+        IF(QA(JJ).EQ.'F ') ZAN(JJ)=9.0d+00
+        IF(QA(JJ).EQ.'Ne') ZAN(JJ)=10.0d+00
+        IF(QA(JJ).EQ.'Na') ZAN(JJ)=11.0d+00
+        IF(QA(JJ).EQ.'Mg') ZAN(JJ)=12.0d+00
+        IF(QA(JJ).EQ.'Al') ZAN(JJ)=13.0d+00
+        IF(QA(JJ).EQ.'Si') ZAN(JJ)=14.0d+00
+        IF(QA(JJ).EQ.'P ') ZAN(JJ)=15.0d+00
+        IF(QA(JJ).EQ.'S ') ZAN(JJ)=16.0d+00
+        IF(QA(JJ).EQ.'Cl') ZAN(JJ)=17.0d+00
+        IF(QA(JJ).EQ.'Ar') ZAN(JJ)=18.0d+00
+        IF(QA(JJ).EQ.'K ') ZAN(JJ)=19.0d+00
+        IF(QA(JJ).EQ.'Ca') ZAN(JJ)=20.0d+00
+        IF(QA(JJ).EQ.'Sc') ZAN(JJ)=21.0d+00
+        IF(QA(JJ).EQ.'Ti') ZAN(JJ)=22.0d+00
+        IF(QA(JJ).EQ.'Ni') ZAN(JJ)=28.0d+00
+      END DO
+c
+c allows for ReaxFF printout of base info
+c
+CSN   write(6,100) qffield
+CSN   write(6,*) qmol
+CSN   write(6,*) '============================'
+CSN   write(6,*) 'COORDINATES OF THE MM REGION'
+CSN   write(6,*) '============================'
+      write(6,99) na
+      write (6,1300)qmol,mdstep+nit+nprevrun,estrc
+      do i1=1,na
+       write (6,1400)qa(i1),(c(i1,i2),i2=1,3)
+      end do
+
+      write(6,*)'exiting ffopt'
+CSN
+      call timit(1)
+      return
+**********************************************************************   
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************   
+   99 format (i4)
+  100 format ('Force field identifier: ',a40)
+ 1000 format (i3)
+ 1100 format (3i3,3f8.4)
+ 1200 format (3i3,4f12.4)
+CSN added modified 1300 1400 from deck mdsav
+ 1300 format (a40,i6,f12.2)
+ 1400 format (a2,3f10.5,3f15.5,i6)
+
+      end 
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK FFHESS
+C> @brief    alternate to ffopt
+C>
+C> @details  alternate to ffopt that assists in hessian calculations
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine ffhess
+
+**********************************************************************   
+C Main purpose is to use a one dimmensional array for gradients in 
+C COMMON /FUNCT / E,EG(3,MXATM), the remainder is the same as in ffopt
+C
+      include 'cbka.blk'
+      include 'opt.blk'
+C
+      character*33 qfile2
+      character*33 qfilh
+      logical hssend,imomm,simomm
+C
+      PARAMETER (NNAM=2,MXATM=2000,MXAO=8192,MAXATM=2000)
+C
+      DIMENSION QNAM(NNAM),KQNAM(NNAM),FFATM(32),AMS(106)
+C
+      COMMON /FUNCT / E,EG(3*MXATM)
+      COMMON /HSSCTL/ IHESSM,IHREP,HSSEND
+      COMMON /INFOA / NATTT,ICH,MUL,NUM,NQMT,NE,NAAA,NB,
+     *                ZAN(MXATM),FFC(3,MXATM),IAN(MXATM)
+      COMMON /IOFILE/ IR,IW,IP,IS,IPK,IDAF,NAV,IODA(950)
+      COMMON /MASSES/ ZMASS(MXATM)
+      COMMON /QMMM1/ IMOMM,SIMOMM,NPAIR,NSEQ
+      COMMON /TIMING/ CPU,WALL
+      COMMON /TGRAD / TEG(3*MAXATM)
+      COMMON /RUNLAB/ TITLE(10),ANAM(MXATM),BNAM(MXATM),BFLAB(MXAO)
+C
+      DATA FFRXN1/8HFFRXN1  /
+      DATA QNAM /8HFFSEED  ,8HIFIOPT  /
+      DATA KQNAM/3,1/
+      DATA FFATM/8HH       ,8HHe      ,8HLi      ,8HBe      ,
+     *           8HB       ,8HC       ,8HN       ,8HO       ,
+     *           8HF       ,8HNe      ,8HNa      ,8HMg      ,
+     *           8HAl      ,8HSi      ,8HP       ,8HS       ,8HCl      ,
+     *           8HAr      ,8HK       ,8HCa      ,8HSc      ,8HTi      ,
+     *           8HV       ,8HCr      ,8HMn      ,8HFe      ,8HCo      ,
+     *           8HNi      ,8HCu      ,8HZn      ,8HGa      ,8HGe      /
+      DATA (AMS(I),I=1,54)  /
+     *   1.007825D+00,4.0026D+00,7.01600D+00,9.01218D+00,11.00931D+00,
+     *   12.0D+00,14.00307D+00,15.99491D+00,18.99840D+00,19.99244D+00,
+     *   22.9898D+00,23.98504D+00,26.98153D+00,27.97693D+00,
+     *   30.97376D+00,31.97207D+00,34.96885D+00,39.948D+00,
+     *   38.96371D+00,39.96259D+00,44.95592D+00,47.90D+00,50.9440D+00,
+     *   51.9405D+00,54.9381D+00,55.9349D+00,58.9332D+00,57.9353D+00,
+     *   62.9298D+00,63.9291D+00,68.9257D+00,73.9219D+00,74.9216D+00,
+     *   79.9165D+00,78.9183D+00,83.9115D+00,
+     *   84.9117D+00,87.9056D+00,89.9054D+00,89.9043D+00,92.9060D+00,
+     *   97.9055D+00,97.0D+00,101.9037D+00,102.9048D+00,105.9032D+00,
+     *   106.9041D+00,113.9036D+00,114.9041D+00,119.9022D+00,
+     *   120.9038D+00,129.9067D+00,126.9044D+00,131.9042D+00/
+      DATA (AMS(I),I=55,106)  /
+     *   132.9054D+00,137.9052D+00,138.9063D+00,139.9054D+00,
+     *   140.9076D+00,141.9077D+00,144.9127D+00,151.9197D+00,
+     *   152.9212D+00,157.9241D+00,158.9253D+00,163.9292D+00,
+     *   164.9303D+00,165.9303D+00,168.9342D+00,173.9389D+00,
+     *   174.9408D+00,179.9465D+00,180.9480D+00,183.9509D+00,
+     *   186.9557D+00,191.9615D+00,192.9629D+00,194.9648D+00,
+     *   196.9665D+00,201.9706D+00,
+     *   204.9744D+00,207.9766D+00,208.9804D+00,208.9824D+00,
+     *   209.9871D+00,222.0176D+00,
+     *   223.0197D+00,226.0254D+00,
+     *   227.0278D+00,232.0381D+00,231.0359D+00,238.0508D+00,
+     *   237.0482D+00,244.0642D+00,243.0614D+00,247.0703D+00,
+     *   247.0703D+00,251.0796D+00,252.0829D+00,257.0751D+00,
+     *   258.0986D+00,259.1009D+00,260.1053D+00,261.1087D+00,
+     *   2*0.0D+00/
+      DATA BLANK/8H        /
+**********************************************************************   
+*                                                                    *
+*     Optimization routines for the reactive MD-force field          *
+*                                                                    *
+**********************************************************************   
+CSN   write(6,*)'ffhess 1'
+      call timit(0)
+CSN   write(6,*)'ffhess 2'
+      ustime=zero
+      systime=zero
+      big=1d+30
+      starttime=secnds(0.0)  
+      vpmax=zero
+      vpmin=zero
+      ifseed=0
+      ifiopt=0
+      JRET=0
+CSN   write(6,*)'na is ',na
+CSN   write(6,*)'nattt is ',nattt
+      call flshbf(6)
+      DO I=1,3
+        DO II=1,NATTT
+          D(I,II)=0.0d+00
+        END DO
+      END DO
+CSN   write(6,*)'ffhess 3'
+      call flshbf(6)
+      CALL NAMEIO(IR,JRET,FFRXN1,NNAM,QNAM,KQNAM,FFSEED,IFIOPT,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,  0,0,0,0,0,
+     *       0,0,0,0,0,  0,0,0,0,0)
+c     dseed = ffseed 
+      dseed = 123457.d0
+      dseed = cpu 
+CSN   write(6,*)'what is dseed and wall? ',dseed,wall
+CSN   open (35,file='/u1/sean/gamessnew/ffparams/fort.35',
+CSN  *       status='unknown')
+CSN   read (35,*)dseed
+CSN   close (35)
+
+      CALL SEQOPN(335,'FORT35','UNKNOWN',.FALSE.,'FORMATTED')
+      read (335,*)dseed
+      CALL SEQCLO(335,'KEEP')
+
+CSN   write(6,*)'what is dseed? ',dseed 
+      iagain=0
+CSN   write(6,*)'ffhess 4'
+      i1=0
+      i2=0
+CSN   write(6,*)'mbond is',mbond
+CSN   write(6,*)'nat is',nat
+CSN   nat = mxatm
+CSN   write(6,*)'nat is',nat
+      call flshbf(6)
+      do i1=1,natf
+      do i2=1,mbond+3
+      ia(i1,i2)=0
+      iag(i1,i2)=0
+      end do
+      end do
+CSN   write(6,*)'ffhess 5'
+      call flshbf(6)
+      iopt = ifiopt
+CSN   open (20,file='/u1/sean/gamessnew/ffparams/fort.20',
+CSN  *       status='unknown')
+CSN   read (20,1000)iopt
+CSN   write(6,*)'iopt is ',iopt
+
+CSN same issue as in deck ffopt
+
+CSN   CALL SEQOPN(320,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+CSN   read (320,1000)iopt
+CSN   CALL SEQCLO(320,'KEEP')
+
+      if (iopt.eq.0) then
+CSN    write(6,*)'calling version'
+       call version
+CSN    write(6,*)'1 calling reac'
+      call flshbf(6)
+       call reac
+      call flshbf(6)
+CSN    write(6,*)'calling calcerr'
+       call calcerr(1)
+       if (nsurp.ge.2) then
+CSN    rewind (90)
+CSN    rewind (98)
+       CALL SEQREW (390)
+       CALL SEQREW (398)
+       do i1=1,nmollset
+CSN    write(6,*)'calling extractgeo'
+       call extractgeo(i1)
+CSN    write(6,*)'calling writebgf'
+CSN    call writebgf(90)
+       call writebgf(390)
+CSN    write(6,*)'calling writegeo'
+CSN    call writegeo(98)
+       call writegeo(398)
+ 
+       if (nsurp.eq.3) then
+       qfilh=qfile(i1)
+       qfile2=qfile(i1)
+       if (imodfile.eq.0) then
+       istart=1
+       qstrana1(1:33)=qfilh
+       call stranal(istart,iend,vout,iout,1)
+       qfile2=qfilh(istart:iend-1)//".bgf"
+       end if
+CSN    open (88,file='/u1/sean/gamessnew/ffparams/qfile2',
+CSN  *       status='unknown')
+CSN    if (imodfile.eq.0) call writebgf(88)
+CSN    if (imodfile.eq.1.and.ngeofor.eq.1) call writebgf(88)
+CSN    close (88)
+
+      CALL SEQOPN(388,'FORT.88','UNKNOWN',.FALSE.,'FORMATTED')
+       if (imodfile.eq.0) call writebgf(388)
+       if (imodfile.eq.1.and.ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+       if (imodfile.eq.0) qfile2=qfilh(istart:iend-1)//".geo"
+CSN    open (88,file='/u1/sean/gamessnew/ffparams/qfile2',
+CSN  *       status='unknown')
+CSN    if (imodfile.eq.0) call writegeo(88)
+CSN    if (imodfile.eq.1.and.ngeofor.eq.0) call writegeo(88)
+CSN    close (88)
+
+      CALL SEQOPN(388,'FORT.88','UNKNOWN',.FALSE.,'FORMATTED')
+       if (imodfile.eq.0) call writegeo(388)
+       if (imodfile.eq.1.and.ngeofor.eq.0) call writegeo(388)
+      CALL SEQCLO(388,'KEEP')
+       end if
+       end do
+       end if
+ 
+       write (*,*) 'Normal end of MD-simulation'
+c      stop 
+      end if
+
+      if (iopt.eq.2) then !force field extrapolation
+       call ffext
+CSN    stop 'Normal end of program; extrapolated force field in unit 13'
+       write(6,*) 'Normal end of program;'
+       write(6,*) 'extrapolated force field in unit 13'
+       CALL ABRT
+      end if
+
+CSN   write(6,*)'calling version'
+      call version
+CSN   write(6,*)'calling readc'
+      call readc
+CSN   write(6,*)'calling ffin2'
+CSN    open (4,file='/u1/sean/gamessnew/ffparams/fort.4',
+CSN  *       status='unknown')
+CSN   rewind(4)
+CSN   call ffin2(4)
+CSN   close(4)
+
+      CALL SEQOPN(304,'FORT4','UNKNOWN',.FALSE.,'FORMATTED')
+      CALL SEQREW(304)
+      call ffin2(304)
+      CALL SEQCLO(304,'KEEP')
+
+*     read (21,1100)ichn(1),ichn(2),ichn(3),vchange,vpmax,vpmin
+*     read (21,*)ichn(1),ichn(2),ichn(3),vchange,vpmax,vpmin
+CSN   read (21,'(a200)')qstrana1
+CSN   write(6,*)'after read 21'
+
+      istart=1
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(1)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(2)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(3)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vchange=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmax=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmin=vout
+      if (vpmax.lt.vpmin) then
+      vph=vpmax
+      vpmax=vpmin
+      vpmin=vph
+      end if
+      if (vchange.lt.0.00001d0) vchange=0.00001d0
+      if (vpmax.lt.0.001d0.and.vpmax.gt.-0.001d0)
+     * vpmax=25000.0d0
+      if (vpmin.lt.0.001d0.and.vpmin.gt.-0.001d0) 
+     * vpmin=-25000.0d0
+      icount=0
+      valpar=fpar(ichn(1),ichn(2),ichn(3))
+      call optdat
+    9 change=parc1*vchange
+CSN   open (25,file='/u1/sean/gamessnew/ffparams/fort.25',
+CSN  *      status='unknown')
+CSN   write (25,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+CSN  $vpmax,vpmin
+CSN   write(6,*)'after write 25'
+
+CSN   close (25)
+
+      CALL SEQOPN(325,'FORT25','UNKNOWN',.FALSE.,'FORMATTED')
+      write (325,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+     $vpmax,vpmin
+      CALL SEQCLO(325,'KEEP')
+
+CSN   call ffchng(1,4,big,-big)
+      call ffchng(1,304,big,-big)
+
+      iflga=0
+      do i1=1,3
+CSN   call ffchng(i1,4,big,-big)
+      call ffchng(i1,304,big,-big)
+CSN   write(6,*)'1.1 calling reac after ffchng'
+      call reac
+      call increm
+      call rewind
+*     call bepsdy(i1)
+      call calcerr(i1)
+CSN   write(6,*)'after 1.1 calling reac after ffchng'
+CSN   write(6,*)'after calling increm, rewind, bepsdy, calcerr'
+      end do
+      errsav=sdy(3)
+      call kmin(vpmax,vpmin)
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+      iflga=1
+CSN   write(6,*)'2 calling reac'
+      call reac
+CSN   write(6,*)'calling increm'
+      call increm
+CSN   write(6,*)'calling rewind'
+      call rewind
+CSN   write(6,*)'calling rewind2'
+      call rewind2
+CSN   write(6,*)'calling bepsdy'
+*     call bepsdy(3)
+CSN   write(6,*)'calling calcerr'
+      call calcerr(3)
+      if (sdy(3).gt.errsav+accincr.and.icount.lt.4) then     !Do not accept parameter change
+CSN   call ffchng(3,4,big,-big)
+CSN   if (sdy(1).lt.errsav) call ffchng(1,4,vpmax,vpmin)
+CSN   if (sdy(2).lt.errsav) call ffchng(2,4,vpmax,vpmin)
+      call ffchng(3,304,big,-big)
+      if (sdy(1).lt.errsav) call ffchng(1,304,vpmax,vpmin)
+      if (sdy(2).lt.errsav) call ffchng(2,304,vpmax,vpmin)
+
+      if (sdy(1).gt.errsav.and.sdy(2).gt.errsav) then
+      vchange=vchange*0.50d0
+      icount=icount+1
+      goto 9
+      end if
+      end if
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      if (nsurp.ge.2) then
+CSN   rewind (90)
+CSN   rewind (98)
+      CALL SEQREW (390)
+      CALL SEQREW (398)
+
+CSN   write(6,*)'in nmollset loop'
+      do i1=1,nmollset
+      call extractgeo(i1)
+CSN   call writebgf(90)
+CSN   call writegeo(98)
+      call writebgf(390)
+      call writegeo(398)
+      if (imodfile.eq.1) then
+CSN   open (88,file='/u1/sean/gamessnew/ffparams/qfile(i1)',
+CSN  *      status='unknown')
+CSN   if (ngeofor.eq.0) call writegeo(88)
+CSN   if (ngeofor.eq.1) call writebgf(88)
+CSN   close(88)
+
+      CALL SEQOPN(388,'FORT:88','UNKNOWN',.FALSE.,'FORMATTED')
+      if (ngeofor.eq.0) call writegeo(388)
+      if (ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+      end if
+      end do
+CSN   write(6,*)'after nmollset loop'
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      end if
+
+      call ffsav
+   10 continue
+
+CSN   write(6,*)'qstrana1 is ',qstrana1
+CSN   write(6,*)'write to 21'
+CSN   read (21,'(a200)',end=20,err=20)qstrana1
+      read (321,'(a200)',end=20,err=20)qstrana1
+CSN   write(6,*)'after write 21'
+
+      istart=1
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(1)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(2)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      ichn(3)=iout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vchange=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmax=vout
+      call stranal(istart,iend,vout,iout,1)
+      istart=iend
+      vpmin=vout
+      if (vpmax.lt.vpmin) then
+      vph=vpmax
+      vpmax=vpmin
+      vpmin=vph
+      end if
+      if (vpmax.lt.0.001d0.and.vpmax.gt.-0.001d0) 
+     * vpmax=25000.0d0
+      if (vpmin.lt.0.001d0.and.vpmin.gt.-0.001d0) 
+     * vpmin=-25000.0d0
+      if (vchange.lt.0.00001d0) vchange=0.00001d0
+      iagain=0
+      icount=0
+      valpar=fpar(ichn(1),ichn(2),ichn(3))
+   11 change=vchange*parc1
+CSN   open (25,file='/u1/sean/gamessnew/ffparams/fort.25',
+CSN  *      status='unknown')
+
+CSN   write(6,*)'write to 25'
+CSN   write (25,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+CSN  $vpmax,vpmin
+CSN   write(6,*)'after write to 25'
+CSN   close (25)
+
+      CALL SEQOPN(325,'FORT25','UNKNOWN',.FALSE.,'FORMATTED')
+      write (325,1200)ichn(1),ichn(2),ichn(3),valpar,vchange*parc1,
+     $vpmax,vpmin
+      CALL SEQCLO(325,'KEEP')
+
+      iflga=0
+      do i1=1,2+ingeo
+*     do i1=1,2
+      if (i1.eq.3) iflga=1
+CSN   call ffchng(i1,4,big,-big)
+      call ffchng(i1,304,big,-big)
+      call reac
+      call increm 
+      call rewind
+*     call bepsdy(i1)
+      call calcerr(i1)
+      end do
+      errsav=sdy(3)
+      call kmin(vpmax,vpmin)
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+      call rewind2
+      call reac
+      call rewind
+      call increm 
+*     call bepsdy(3)
+      call calcerr(3)
+      if (sdy(3).gt.errsav+accincr.and.icount.lt.4) then     !Do not accept parameter change
+CSN   call ffchng(3,4,big,-big)
+CSN   if (sdy(1).lt.errsav) call ffchng(1,4,vpmax,vpmin)
+CSN   if (sdy(2).lt.errsav) call ffchng(2,4,vpmax,vpmin)
+      call ffchng(3,304,big,-big)
+      if (sdy(1).lt.errsav) call ffchng(1,304,vpmax,vpmin)
+      if (sdy(2).lt.errsav) call ffchng(2,304,vpmax,vpmin)
+      if (sdy(1).gt.errsav.and.sdy(2).gt.errsav) then
+      vchange=vchange*0.50d0
+      icount=icount+1
+      goto 11
+      end if
+      end if
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (ingeo.eq.1.and.sdy(3).lt.errsav.and.nsurp.ne.2.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      if (nsurp.ge.2) then
+CSN   rewind (90)
+CSN   rewind (98)
+      CALL SEQREW(390)
+      CALL SEQREW(398)
+
+CSN   write(6,*)'in nmollset 2'
+      do i1=1,nmollset
+      call extractgeo(i1)
+CSN   call writebgf(90)
+CSN   call writegeo(98)
+      call writebgf(390)
+      call writegeo(398)
+      if (imodfile.eq.1) then
+CSN   open (88,file='/u1/sean/gamessnew/ffparams/qfile(i1)',
+CSN  *      status='unknown')
+CSN   if (ngeofor.eq.0) call writegeo(88)
+CSN   if (ngeofor.eq.1) call writebgf(88)
+CSN   close(88)
+
+      CALL SEQOPN(388,'FORT:88','UNKNOWN',.FALSE.,'FORMATTED')
+      if (ngeofor.eq.0) call writegeo(388)
+      if (ngeofor.eq.1) call writebgf(388)
+      CALL SEQCLO(388,'KEEP')
+
+      end if
+      end do
+CSN   write(6,*)'after nmollset 2 loop'
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.0) call cpfile(98,3)
+CSN   if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+CSN  $and.ngeofor.eq.1) call cpfile(90,3)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.0) call cpfile(398,303)
+      if (imodfile.eq.0.and.sdy(3).lt.errsav.and.ingeo.eq.1.
+     $and.ngeofor.eq.1) call cpfile(390,303)
+      end if
+      call ffsav
+      goto 10
+   20 continue
+CSN   write(6,*) 'after 20 continue'
+CSN   call ffchng(4,4,big,-big)
+      call ffchng(4,304,big,-big)
+CSN   write(6,*)'after call ffchng'
+      call finrep
+CSN   write(6,*)'after call finrep'      
+CSN
+      I=0
+      J=0
+      II=0
+      JJ=0
+      if(hssend) NATTT=NA
+CSN   E=ESTRC
+      E=ESTRC/627.5096d+00
+CSN   write(6,*)'printing out ffc(3,na) to transfer c(na,3)'
+      DO I=1,3
+        DO II=1,NA
+          J=J+1
+          if(hssend) then
+           EG(J) =D(I,II)
+           TEG(J)=EG(J)
+          else
+           TEG(J)=D(I,II)
+          end if
+          if(.not.simomm .and. .not.imomm) FFC(I,II)=C(II,I)
+CSN       write(6,*)'ffc(',i,',',ii,') is ',ffc(i,ii)
+        END DO
+      END DO
+C
+      write(6,*)'in ffhess'
+      DO JJ=1,NA
+        IF(QA(JJ).EQ.'H ') ANAM(JJ)=FFATM(1)
+        IF(QA(JJ).EQ.'He') ANAM(JJ)=FFATM(2)
+        IF(QA(JJ).EQ.'Li') ANAM(JJ)=FFATM(3)
+        IF(QA(JJ).EQ.'Be') ANAM(JJ)=FFATM(4)
+        IF(QA(JJ).EQ.'B ') ANAM(JJ)=FFATM(5)
+        IF(QA(JJ).EQ.'C ') ANAM(JJ)=FFATM(6)
+        IF(QA(JJ).EQ.'N ') ANAM(JJ)=FFATM(7)
+        IF(QA(JJ).EQ.'O ') ANAM(JJ)=FFATM(8)
+        IF(QA(JJ).EQ.'F ') ANAM(JJ)=FFATM(9)
+        IF(QA(JJ).EQ.'Ne') ANAM(JJ)=FFATM(10)
+        IF(QA(JJ).EQ.'Na') ANAM(JJ)=FFATM(11)
+        IF(QA(JJ).EQ.'Mg') ANAM(JJ)=FFATM(12)
+        IF(QA(JJ).EQ.'Al') ANAM(JJ)=FFATM(13)
+        IF(QA(JJ).EQ.'Si') ANAM(JJ)=FFATM(14)
+        IF(QA(JJ).EQ.'P ') ANAM(JJ)=FFATM(15)
+        IF(QA(JJ).EQ.'S ') ANAM(JJ)=FFATM(16)
+        IF(QA(JJ).EQ.'Cl') ANAM(JJ)=FFATM(17)
+        IF(QA(JJ).EQ.'Ar') ANAM(JJ)=FFATM(18)
+        IF(QA(JJ).EQ.'K ') ANAM(JJ)=FFATM(19)
+        IF(QA(JJ).EQ.'Ca') ANAM(JJ)=FFATM(20)
+        IF(QA(JJ).EQ.'Sc') ANAM(JJ)=FFATM(21)
+        IF(QA(JJ).EQ.'Ti') ANAM(JJ)=FFATM(22)
+        IF(QA(JJ).EQ.'Ni') ANAM(JJ)=FFATM(28)
+        BNAM(JJ)=BLANK
+CSN     write(6,77) jj,anam(jj)
+      END DO
+CSN
+CSN77 format(1x,'anam(',i3,') is ',a8)
+      JJ=0
+      DO JJ=1,NA
+        IF(QA(JJ).EQ.'H ') ZMASS(JJ)=AMS(1)
+        IF(QA(JJ).EQ.'He') ZMASS(JJ)=AMS(2)
+        IF(QA(JJ).EQ.'Li') ZMASS(JJ)=AMS(3)
+        IF(QA(JJ).EQ.'Be') ZMASS(JJ)=AMS(4)
+        IF(QA(JJ).EQ.'B ') ZMASS(JJ)=AMS(5)
+        IF(QA(JJ).EQ.'C ') ZMASS(JJ)=AMS(6)
+        IF(QA(JJ).EQ.'N ') ZMASS(JJ)=AMS(7)
+        IF(QA(JJ).EQ.'O ') ZMASS(JJ)=AMS(8)
+        IF(QA(JJ).EQ.'F ') ZMASS(JJ)=AMS(9)
+        IF(QA(JJ).EQ.'Ne') ZMASS(JJ)=AMS(10)
+        IF(QA(JJ).EQ.'Na') ZMASS(JJ)=AMS(11)
+        IF(QA(JJ).EQ.'Mg') ZMASS(JJ)=AMS(12)
+        IF(QA(JJ).EQ.'Al') ZMASS(JJ)=AMS(13)
+        IF(QA(JJ).EQ.'Si') ZMASS(JJ)=AMS(14)
+        IF(QA(JJ).EQ.'P ') ZMASS(JJ)=AMS(15)
+        IF(QA(JJ).EQ.'S ') ZMASS(JJ)=AMS(16)
+        IF(QA(JJ).EQ.'Cl') ZMASS(JJ)=AMS(17)
+        IF(QA(JJ).EQ.'Ar') ZMASS(JJ)=AMS(18)
+        IF(QA(JJ).EQ.'K ') ZMASS(JJ)=AMS(19)
+        IF(QA(JJ).EQ.'Ca') ZMASS(JJ)=AMS(20)
+        IF(QA(JJ).EQ.'Sc') ZMASS(JJ)=AMS(21)
+        IF(QA(JJ).EQ.'Ti') ZMASS(JJ)=AMS(22)
+        IF(QA(JJ).EQ.'Ni') ZMASS(JJ)=AMS(28)
+      END DO
+      JJ=0
+      DO JJ=1,NA
+        IF(QA(JJ).EQ.'H ') ZAN(JJ)=1.0d+00
+        IF(QA(JJ).EQ.'He') ZAN(JJ)=2.0d+00
+        IF(QA(JJ).EQ.'Li') ZAN(JJ)=3.0d+00
+        IF(QA(JJ).EQ.'Be') ZAN(JJ)=4.0d+00
+        IF(QA(JJ).EQ.'B ') ZAN(JJ)=5.0d+00
+        IF(QA(JJ).EQ.'C ') ZAN(JJ)=6.0d+00
+        IF(QA(JJ).EQ.'N ') ZAN(JJ)=7.0d+00
+        IF(QA(JJ).EQ.'O ') ZAN(JJ)=8.0d+00
+        IF(QA(JJ).EQ.'F ') ZAN(JJ)=9.0d+00
+        IF(QA(JJ).EQ.'Ne') ZAN(JJ)=10.0d+00
+        IF(QA(JJ).EQ.'Na') ZAN(JJ)=11.0d+00
+        IF(QA(JJ).EQ.'Mg') ZAN(JJ)=12.0d+00
+        IF(QA(JJ).EQ.'Al') ZAN(JJ)=13.0d+00
+        IF(QA(JJ).EQ.'Si') ZAN(JJ)=14.0d+00
+        IF(QA(JJ).EQ.'P ') ZAN(JJ)=15.0d+00
+        IF(QA(JJ).EQ.'S ') ZAN(JJ)=16.0d+00
+        IF(QA(JJ).EQ.'Cl') ZAN(JJ)=17.0d+00
+        IF(QA(JJ).EQ.'Ar') ZAN(JJ)=18.0d+00
+        IF(QA(JJ).EQ.'K ') ZAN(JJ)=19.0d+00
+        IF(QA(JJ).EQ.'Ca') ZAN(JJ)=20.0d+00
+        IF(QA(JJ).EQ.'Sc') ZAN(JJ)=21.0d+00
+        IF(QA(JJ).EQ.'Ti') ZAN(JJ)=22.0d+00
+        IF(QA(JJ).EQ.'Ni') ZAN(JJ)=28.0d+00
+      END DO
+c
+c allows for ReaxFF printout of base info
+c
+      write(6,100) qffield
+      write(6,*) qmol
+      write(6,1000) na
+      write (6,1300)qmol,mdstep+nit+nprevrun,estrc
+      do i1=1,na
+       write (6,1400)qa(i1),(c(i1,i2),i2=1,3)
+      end do
+
+      call timit(1)
+      call flshbf(6)
+      return
+**********************************************************************   
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************   
+  100 format ('Force field identifier: ',a40)
+ 1000 format (i4)
+ 1100 format (3i3,3f8.4)
+ 1200 format (3i3,4f12.4)
+CSN added modified 1300 1400 from deck mdsav
+ 1300 format (a40,i6,f12.2)
+ 1400 format (a2,3f10.5,3f15.5,i6)
+      end 
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK FFIN2
+C> @brief    read in force field
+C>
+C> @details  read in force field for optimization
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   nunit  : unit number for file containing force field info
+C>
+      subroutine ffin2(nunit)     
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Read in force field for optimization                           *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In ffin2'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In ffin2'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      read (nunit,1000)qff(1)
+      read (nunit,1010)npar,qff(2)
+      do i1=1,npar
+      read (nunit,1015)fpar(1,i1,1),qff(2+i1)
+      end do
+      read (nunit,1010)nso,qff(2+npar+1)
+      read (nunit,1000)qff(2+npar+2)
+      read (nunit,1000)qff(2+npar+3)
+      read (nunit,1000)qff(2+npar+4)
+      do i1=1,nso
+      read (nunit,1200)qas2(i1),(fpar(2,i1,i2),i2=1,8)
+CSN   write(6,*)'qas2(',i1,') is ',qas2(i1)
+      read (nunit,1250)(fpar(2,i1,i2),i2=9,16)
+      read (nunit,1250)(fpar(2,i1,i2),i2=17,24)
+      read (nunit,1250)(fpar(2,i1,i2),i2=25,32)
+      end do
+      ihulp=2+npar+4
+      read (nunit,1010)nboty,qff(ihulp+1)
+      read (nunit,1000)qff(ihulp+2)
+      do i1=1,nboty
+      read (nunit,1400)iboo(i1,1),iboo(i1,2),(fpar(3,i1,i2),i2=1,8)
+      read (nunit,1450)(fpar(3,i1,i2),i2=9,16)
+      end do
+      read (nunit,1010)nodmty,qff(ihulp+3)
+      do i1=1,nodmty
+      read (nunit,1400)idmo(i1,1),idmo(i1,2),(fpar(4,i1,i2),i2=1,6)
+      end do
+      read (nunit,1010)nvaty,qff(ihulp+4)
+      do i1=1,nvaty
+      read (nunit,1500)ivao(i1,1),ivao(i1,2),ivao(i1,3),
+     $(fpar(5,i1,i2),i2=1,7)
+      end do
+      read (nunit,1010)ntoty,qff(ihulp+5)
+      do i1=1,ntoty
+      read (nunit,1600)itoo(i1,1),itoo(i1,2),itoo(i1,3),itoo(i1,4),
+     $(fpar(6,i1,i2),i2=1,7)
+      end do
+      read (nunit,1010)nhbty,qff(ihulp+6)
+      do i1=1,nhbty
+      read (nunit,1500)ihbo(i1,1),ihbo(i1,2),ihbo(i1,3),
+     $(fpar(7,i1,i2),i2=1,4)
+      end do
+      return
+**********************************************************************
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************
+ 1000 format (a80)
+ 1010 format (i3,a80)
+ 1015 format (f10.4,a80)
+ 1100 format (i3,2x,a2,3x,3d22.15)
+ 1200 format (1x,a2,10f9.4)
+ 1250 format (3x,10f9.4)
+ 1300 format (f10.4)
+ 1400 format (2i3,8f9.4)
+ 1450 format (6x,8f9.4)
+ 1500 format (3i3,7f9.4)
+ 1600 format (4i3,7f9.4)
+      end 
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK FFCHNG
+C> @brief    force field change
+C>
+C> @details  changes and re-writes the force field and linked parameters
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   ichange: controls writing the force field
+C> @param   nunit  : unit number for file containing force field info
+C> @param   vhigh  : upper limit for force field parameters
+C> @param   vlow   : lower limit for force field parameters 
+C>
+      subroutine ffchng(ichange,nunit,vhigh,vlow)     
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Change the force field                                         *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In ffchng'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In ffchng'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      if (ichange.gt.4) goto 30   !just write the force field
+      if (valpar.ge.zero) then
+      if (ichange.eq.1) vparn=valpar-change
+      if (ichange.eq.2) vparn=valpar+change
+      if (ichange.eq.3) vparn=valpar
+      if (ichange.eq.4) vparn=valnew
+      else
+      if (ichange.eq.1) vparn=valpar+change
+      if (ichange.eq.2) vparn=valpar-change
+      if (ichange.eq.3) vparn=valpar
+      if (ichange.eq.4) vparn=valnew
+      end if 
+
+      if (vparn.gt.vhigh) vparn=vhigh
+      if (vparn.lt.vlow) vparn=vlow
+      fpar(ichn(1),ichn(2),ichn(3))=vparn
+**********************************************************************   
+*                                                                    *
+*     Change linked parameters                                       *
+*                                                                    *
+**********************************************************************   
+CSN10 read (23,'(4i3)',end=20)ihk1,ihk2,ihk3,ihk4
+   10 read (323,'(4i3)',end=20)ihk1,ihk2,ihk3,ihk4
+      if (ihk1.eq.ichn(1).and.ihk2.eq.ichn(2).and.ihk3.eq.ichn(3)) 
+     $then
+      do i2=1,ihk4
+CSN   read (23,'(3i3)')ipk1,ipk2,ipk3
+      read (323,'(3i3)')ipk1,ipk2,ipk3
+      fpar(ipk1,ipk2,ipk3)=vparn
+      end do
+      else
+      do i2=1,ihk4
+CSN   read (23,'(3i3)')ipk1,ipk2,ipk3
+      read (323,'(3i3)')ipk1,ipk2,ipk3
+      end do
+      end if
+      goto 10
+   20 rewind (23)
+**********************************************************************   
+*                                                                    *
+*     Write the force field                                          *
+*                                                                    *
+**********************************************************************   
+   30 continue
+      rewind (nunit)
+      write (nunit,1000)qff(1)
+      write (nunit,1010)npar,qff(2)
+      do i1=1,npar
+      write (nunit,1015)fpar(1,i1,1),qff(2+i1)
+      end do
+      write (nunit,1010)nso,qff(2+npar+1)
+      write (nunit,1000)qff(2+npar+2)
+      write (nunit,1000)qff(2+npar+3)
+      write (nunit,1000)qff(2+npar+4)
+      do i1=1,nso
+      write (nunit,1200)qas2(i1),(fpar(2,i1,i2),i2=1,8)
+      write (nunit,1250)(fpar(2,i1,i2),i2=9,16)
+      write (nunit,1250)(fpar(2,i1,i2),i2=17,24)
+      write (nunit,1250)(fpar(2,i1,i2),i2=25,32)
+      end do
+      ihulp=2+npar+4
+      write (nunit,1010)nboty,qff(ihulp+1)
+      write (nunit,1000)qff(ihulp+2)
+      do i1=1,nboty
+      write (nunit,1400)iboo(i1,1),iboo(i1,2),(fpar(3,i1,i2),i2=1,8)
+      write (nunit,1450)(fpar(3,i1,i2),i2=9,16)
+      end do
+      write (nunit,1010)nodmty,qff(ihulp+3)
+      do i1=1,nodmty
+      write (nunit,1400)idmo(i1,1),idmo(i1,2),(fpar(4,i1,i2),i2=1,6)
+      end do
+      write (nunit,1010)nvaty,qff(ihulp+4)
+      do i1=1,nvaty
+      write (nunit,1500)ivao(i1,1),ivao(i1,2),ivao(i1,3),
+     $(fpar(5,i1,i2),i2=1,7)
+      end do
+      write (nunit,1010)ntoty,qff(ihulp+5)
+      do i1=1,ntoty
+      write (nunit,1600)itoo(i1,1),itoo(i1,2),itoo(i1,3),itoo(i1,4),
+     $(fpar(6,i1,i2),i2=1,7)
+      end do
+      write (nunit,1010)nhbty,qff(ihulp+6)
+      do i1=1,nhbty
+      write (nunit,1500)ihbo(i1,1),ihbo(i1,2),ihbo(i1,3),
+     $(fpar(7,i1,i2),i2=1,4)
+      end do
+      rewind (nunit)
+      return
+**********************************************************************
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************
+ 1000 format (a80)
+ 1010 format (i3,a65)
+ 1015 format (f10.4,a40)
+ 1100 format (i3,2x,a2,3x,3d22.15)
+ 1200 format (1x,a2,10f9.4)
+ 1250 format (3x,10f9.4)
+ 1300 format (f10.4)
+ 1400 format (2i3,8f9.4)
+ 1450 format (6x,8f9.4)
+ 1500 format (3i3,7f9.4)
+ 1600 format (4i3,7f9.4)
+      end 
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK OPTDAT
+C> @brief    read force field
+C>
+C> @details  read force field optimization data
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine optdat
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Read force field optimization data                             *
+*                                                                    *
+**********************************************************************   
+CSN   write(6,*)'vvvvvvvvvvvoptdat'
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In optdat'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In optdat'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      imam=1
+      ndata=0
+      iheatf=0
+CSN   write(6,*)'before read unit 9'
+CSN10 read (9,100,end=20,err=20)ndatm(imam),qmdat(imam)
+   10 read (309,100,end=20,err=20)ndatm(imam),qmdat(imam)
+CSN   write(6,*)'imam and ndatm(imam) are ',imam,ndatm(imam)
+      do i1=1,ndatm(imam)
+CSN   read (9,200)idat(i1+ndata),datopt(i1+ndata),devi(i1+ndata)
+      read (309,200)idat(i1+ndata),datopt(i1+ndata),devi(i1+ndata)
+      if (idat(i1+ndata).eq.4) then
+      iheatf=iheatf+1
+      iheada(iheatf)=i1+ndata
+      end if
+      end do
+      ndata=ndata+ndatm(imam)
+      imam=imam+1
+      goto 10
+CSN   write(6,*)'imam is ',imam
+   20 continue
+CSN   write(6,*)'after 20 continue'
+CSN   write(6,*)'imam is ',imam
+CSN   rewind (9)
+      CALL SEQREW(309)
+**********************************************************************   
+*                                                                    *
+*     Read in coupled data                                           *
+*                                                                    *
+**********************************************************************   
+CSN   read (22,300,err=30,end=30)nkop
+      read (322,300,err=30,end=30)nkop
+      do i1=1,nkop
+CSN   read (22,300)ikop1(i1),ikop2(i1),mu1(i1),mu2(i1),
+CSN  $vkop(i1),devkop(i1)
+      read (322,300)ikop1(i1),ikop2(i1),mu1(i1),mu2(i1),
+     $vkop(i1),devkop(i1)
+      end do
+   30 continue
+CSN   write(6,*)'^^^^^^^^^^^optdat'
+**********************************************************************
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************
+  100 format (i3,a60)
+  200 format (i3,12x,f10.2,f10.4)
+  300 format (4i4,2f8.4)
+      return
+      end
+**********************************************************************
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK BEPSDY
+C> @brief    training set and calculated data
+C>
+C> @details  calculate deviation between training set and calculated data 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   inum   : index number for total error in sdy array
+C>
+      subroutine bepsdy(inum)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Calculate deviation between training set and calculated data   *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In bepsdy'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In bepsdy'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      toterr=zero
+      ihu=0
+      do i1=1,imam
+CSN   write (99,100)qmdat(i1)
+      write (399,100)qmdat(i1)
+      do i2=1,ndatm(i1)
+      ihu=ihu+1
+      diff=datopt(ihu)-caldat(ihu)
+      err=(diff/devi(ihu))**2
+      toterr=toterr+err
+CSN   write (99,200)ihu,datopt(ihu),caldat(ihu),devi(ihu),err,toterr
+      write (399,200)ihu,datopt(ihu),caldat(ihu),devi(ihu),err,toterr
+      end do
+      end do
+      do i1=1,nkop
+      diffh=caldat(ikop1(i1))/mu1(i1)-caldat(ikop2(i1))/mu2(i1)
+      diff=diffh-vkop(i1)
+      err=(diff/devkop(i1))**2
+      toterr=toterr+err
+CSN   write (99,300)caldat(ikop1(i1))/mu1(i1),
+CSN  $caldat(ikop2(i1))/mu2(i1),diffh,vkop(i1),devkop(i1),err,toterr
+      write (399,300)caldat(ikop1(i1))/mu1(i1),
+     $caldat(ikop2(i1))/mu2(i1),diffh,vkop(i1),devkop(i1),err,toterr
+      end do
+      sdy(inum)=toterr
+CSN   open (13,file='/u1/sean/gamessnew/ffparams/fort.13',
+CSN  *      status='unknown',access='append')
+CSN   write (13,400)toterr
+CSN   close (13)
+
+      CALL SEQOPN(313,'FORT13','UNKNOWN',.FALSE.,'FORMATTED')
+      write (313,400)toterr
+      CALL SEQCLO(313,'KEEP')
+
+CSN   rewind (99)
+      CALL SEQREW(399)
+**********************************************************************
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************
+  100 format (a60)
+  200 format (i4,5f12.4)
+  300 format (7f10.4)
+  400 format (f12.4)
+      return
+      end
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK CALCERR
+C> @brief    force field output
+C>
+C> @details  calculates error force field and generate output 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   inum   : index number for total error in sdy array
+C>
+      subroutine calcerr(inum)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      character*80 qrom2
+**********************************************************************
+*                                                                    *
+*     Calculate error force field and generate output to unit 99     *
+*                                                                    *
+**********************************************************************
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In calcerr'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In calcerr'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+ 
+      end if
+      toterr=zero
+CSN   write (99,100)
+      write (399,100)
+      if (nsurp.ge.2) nprob=nmollset+1
+      do i1=1,nprob-1
+      ifound=0
+      do i2=1,ndata2
+      qrom2=qdatid(i2)
+      if (qrom2(1:20).eq.qkeyw(i1)) then
+      error=(caldat(i2)-compdat(i2))/weightdat(i2)
+      toterr=toterr+error*error
+
+      if (ifound.eq.0) then
+CSN   write (99,'(a60,5f12.4)')qrom2(1:80),caldat(i2),
+CSN  $compdat(i2),weightdat(i2),error*error,toterr
+      write (399,'(a60,5f12.4)')qrom2(1:80),caldat(i2),
+     $compdat(i2),weightdat(i2),error*error,toterr
+      else
+CSN   write (99,'(a60,5f12.4)')qrom2(22:80),caldat(i2),
+CSN  $compdat(i2),weightdat(i2),error*error,toterr
+      write (399,'(a60,5f12.4)')qrom2(22:80),caldat(i2),
+     $compdat(i2),weightdat(i2),error*error,toterr
+      end if
+
+*     if (ifound.eq.0) write (99,'(a10)')qkeyw(i1)
+*     write (99,'(a60,5f12.4)')qrom2(12:60),caldat(i2),
+*    $compdat(i2),weightdat(i2),error*error,toterr
+
+      ifound=1
+      end if
+      end do
+      end do
+CSN   write (99,*)
+      write (399,*)
+      do i2=1,ndata2
+      qrom2=qdatid(i2)
+      if (qrom2(1:6).eq.'Energy') then
+      error=(caldat(i2)-compdat(i2))/weightdat(i2)
+      toterr=toterr+error*error
+CSN   write (99,'(a60,5f12.4)')qdatid(i2),caldat(i2),
+CSN  $compdat(i2),weightdat(i2),error*error,toterr
+      write (399,'(a60,5f12.4)')qdatid(i2),caldat(i2),
+     $compdat(i2),weightdat(i2),error*error,toterr
+      end if
+      if (qrom2(1:4).eq.'Geo ') then
+      error=(caldat(i2)-compdat(i2))/weightdat(i2)
+      toterr=toterr+error*error
+CSN   write (99,'(a60,5f12.4)')qdatid(i2),caldat(i2),
+CSN  $compdat(i2),weightdat(i2),error*error,toterr
+      write (399,'(a60,5f12.4)')qdatid(i2),caldat(i2),
+     $compdat(i2),weightdat(i2),error*error,toterr
+      end if
+      end do
+      sdy(inum)=toterr
+CSN   open (13,file='/u1/sean/gamessnew/ffparams/fort.13',
+CSN  *      status='unknown',access='append')
+CSN   write (13,400)toterr
+CSN   close (13)
+
+      CALL SEQOPN(313,'FORT13','UNKNOWN',.FALSE.,'FORMATTED')
+      write (313,400)toterr
+      CALL SEQCLO(313,'KEEP')
+
+CSN   rewind (99)
+      CALL SEQREW(99)
+
+  100 format (62x,'FField value',1x,'QM/Lit value',2x,'Weight',
+     $6x,'Error',4x,'Total error')
+  400 format (f12.4)
+      return
+      end
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK FINREP
+C> @brief    minimization report
+C>
+C> @details  writes out final report of minimization 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine finrep
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      dimension qlab(5)
+      character*20 qlab
+**********************************************************************   
+*                                                                    *
+*     Write out final report of minimization                         *
+*                                                                    *
+**********************************************************************   
+CSN   write(6,*)'vvvvvvvvvvvvfinrep'
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In finrep'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In finrep'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      qlab(1)='Bond length      '
+      qlab(2)='Valency angle    '
+      qlab(3)='Torsion angle    '
+      qlab(4)='Heat of formation'
+      toterr=zero
+      ihu=0
+CSN   write(6,*)'imam is ',imam
+      do i1=1,imam-1
+CSN   write (6,100)qmdat(i1)
+CSN   write (6,150)
+CSN   write (6,*)
+CSN   write (67,100)qmdat(i1)
+CSN   write (67,150)
+CSN   write (67,*)
+      write (367,100)qmdat(i1)
+      write (367,150)
+      write (367,*)
+      do i2=1,ndatm(i1)
+      ihu=ihu+1
+      diff=datopt(ihu)-caldat(ihu)
+      err=(diff/devi(ihu))**2
+      toterr=toterr+err
+CSN   write (6,200)qlab(idat(ihu)),datopt(ihu),
+CSN  $caldat(ihu)
+CSN   write (67,200)qlab(idat(ihu)),datopt(ihu),
+CSN  $caldat(ihu)
+      write (367,200)qlab(idat(ihu)),datopt(ihu),
+     $caldat(ihu)
+      end do
+CSN   write (67,*)
+      write (367,*)
+      end do
+CSN   write(6,*)'nkop is ',nkop
+      do i1=1,nkop
+      diffh=caldat(ikop1(i1))-caldat(ikop2(i1))
+      diff=diffh-vkop(i1)
+      err=(diff/devkop(i1))**2
+      toterr=toterr+err
+CSN   write (6,300)caldat(ikop1(i1)),caldat(ikop2(i1)),
+CSN  $diffh,vkop(i1)
+CSN   write (67,300)caldat(ikop1(i1)),caldat(ikop2(i1)),
+CSN  $diffh,vkop(i1)
+      write (367,300)caldat(ikop1(i1)),caldat(ikop2(i1)),
+     $diffh,vkop(i1)
+      end do
+      ihu=0
+      do i1=1,imam-1
+      do i2=1,ndatm(i1)
+      ihu=ihu+1
+CSN   write(6,*)'ihu and idat(ihu) are ',ihu,idat(ihu)
+      if (idat(ihu).eq.4) then
+CSN   write (6,310)qmdat(i1),datopt(ihu),caldat(ihu)
+CSN   write (66,310)qmdat(i1),datopt(ihu),caldat(ihu)
+      write (366,310)qmdat(i1),datopt(ihu),caldat(ihu)
+      end if
+      end do
+      end do
+
+CSN   write(6,*)'^^^^^^^^^^^^finrep'
+**********************************************************************
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************
+  100 format (a60)
+  150 format ('Data type',15x,'Literature',2x,'Calculated')
+  200 format (a20,2f12.4)
+  300 format (20x,4f12.4)
+  310 format (a40,4f12.4)
+      return
+      end
+**********************************************************************   
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK REWIND
+C> @brief    rewind files
+C>
+C> @details  rewind files assigned by unit numbers 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine rewind
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Rewind files                                                   *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In rewind'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In rewind'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+CSN   rewind (2)
+CSN   rewind (3)
+CSN   rewind (9)
+CSNN  rewind (10)
+CSN   rewind (18)
+CSN   rewind (28)
+CSN   rewind (38)
+CSN   rewind (55)
+CSN   rewind (56)
+CSN   rewind (58)
+CSN   rewind (67)
+CSN   rewind (76)
+CSN   rewind (86)
+CSN   rewind (90)
+CSN   rewind (98)
+CSN   rewind (81)
+CSN   rewind (91)
+
+      CALL SEQREW (302)
+      CALL SEQREW (303)
+      CALL SEQREW (309)
+CSN   CALL SEQREW (310)
+      CALL SEQREW (318)
+      CALL SEQREW (328)
+      CALL SEQREW (338)
+      CALL SEQREW (355)
+      CALL SEQREW (356)
+      CALL SEQREW (358)
+      CALL SEQREW (367)
+      CALL SEQREW (376)
+      CALL SEQREW (386)
+      CALL SEQREW (390)
+      CALL SEQREW (398)
+      CALL SEQREW (381)
+      CALL SEQREW (391)
+*     open (unit=68,file='xmolout',status='unknown')
+
+      return
+      end
+**********************************************************************
+**********************************************************************   
+
+C*MODULE FFOPT    *DECK REWIND2
+C> @brief    rewind files
+C>
+C> @details  rewind other files associated with debugging
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine rewind2
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Rewind other files                                             *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In rewind2'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In rewind2'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+CSN   open (unit=71,file='/u1/sean/gamessnew/ffparams/fort.71',
+CSN  *      status='unknown')
+CSN   write (71,*)
+CSN   close (71)
+
+      CALL SEQOPN(371,'FORT71','UNKNOWN',.FALSE.,'FORMATTED')
+      write (371,*)
+      CALL SEQCLO(371,'KEEP')
+
+CSN   open (unit=73,file='/u1/sean/gamessnew/ffparams/fort.73',
+CSN  *      status='unknown')
+CSN   write (73,*)
+CSN   close (73)
+
+      CALL SEQOPN(373,'FORT74','UNKNOWN',.FALSE.,'FORMATTED')
+      write (373,*)
+      CALL SEQCLO(373,'KEEP')
+
+CSN   open (unit=74,file='/u1/sean/gamessnew/ffparams/fort.74',
+CSN  *      status='unknown')
+CSN   write (74,*)
+CSN   close (74)
+
+      CALL SEQOPN(374,'FORT74','UNKNOWN',.FALSE.,'FORMATTED')
+      write (374,*)
+      CALL SEQCLO(374,'KEEP')
+
+CSN   open (unit=62,file='/u1/sean/gamessnew/ffparams/fort.62',
+CSN  *      status='unknown')
+CSN   write (62,*)
+CSN   close (62)
+
+      CALL SEQOPN(362,'FORT62','UNKNOWN',.FALSE.,'FORMATTED')
+      write (362,*) 
+      CALL SEQCLO(362,'KEEP')
+
+      return
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK KMIN
+C> @brief    parabolic search
+C>
+C> @details  perform a single-parameter parabolic search algorithm 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   vpmax  : maximum valence parameter value
+C> @param   vpmin  : minimum valence parameter value
+C>
+      subroutine kmin(vpmax,vpmin)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      dimension stem(3)
+**********************************************************************   
+*                                                                    *
+*     Perform parabolic search                                       *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In kmin'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In kmin'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      if (valpar.ge.zero) then
+      stem(1)=valpar-change
+      stem(2)=valpar+change
+      stem(3)=valpar
+      else
+      stem(1)=valpar+change
+      stem(2)=valpar-change
+      stem(3)=valpar
+      end if
+
+      if (abs(sdy(1)-sdy(2)).lt.1d-5.and.abs(sdy(1)-sdy(3)).lt.1d-5)
+     $then
+      temax=stem(3)
+      goto 10
+      end if
+
+      ste32=stem(3)*stem(3)
+      ste22=stem(2)*stem(2)
+      ste12=stem(1)*stem(1)
+      if ((ste22-ste12).lt.1d-5) ste22=ste22+0.0010d0   !Avoid problems with parabolic search
+      b1=(sdy(3)-sdy(1))*(ste22-ste12)-(sdy(2)-sdy(1))*(ste32-ste12)
+      b2=(stem(3)-stem(1))*(ste22-ste12)-(stem(2)-stem(1))
+     $*(ste32-ste12)
+      b=b1/b2
+      a=(sdy(2)-sdy(1)-b*(stem(2)-stem(1)))/(ste22-ste12)
+      ac=sdy(1)-a*ste12-b*stem(1)
+      temax=-b/(2.0d0*a)
+      expec=0.01d0*a*temax*temax+0.01d0*b*temax+0.01d0*ac
+      if (abs(sdy(1)-sdy(2)).lt.1d-5.and.abs(sdy(1)-sdy(3)).lt.1d-5)
+     $then
+      temax=stem(3)
+      end if
+   10 continue
+CSN10 open (79,file='/u1/sean/gamessnew/ffparams/fort.79',
+CSN  *      status='unknown',access='append')
+
+      CALL SEQOPN(379,'FORT79','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In rewind2'
+
+CSN   write (79,120)ichn(1),ichn(2),ichn(3),stem
+CSN   write (79,130)sdy
+CSN   write (79,140)a,b,ac
+CSN   write (79,150)temax
+CSN   write (79,155)100*expec
+
+      write (379,120)ichn(1),ichn(2),ichn(3),stem
+      write (379,130)sdy
+      write (379,140)a,b,ac
+      write (379,150)temax
+      write (379,155)100*expec
+
+      hu1=1.00d0-parc2
+      hu2=1.00d0+parc2
+*     if (valpar.ge.zero) then
+*     if (temax.lt.hu1*stem(1)) temax=hu1*stem(1)
+*     if (temax.gt.hu2*stem(2)) temax=hu2*stem(2)
+*     end if
+*     if (valpar.lt.zero) then
+*     if (temax.gt.hu1*stem(2)) temax=hu1*stem(2)
+*     if (temax.lt.hu2*stem(1)) temax=hu2*stem(1)
+*     end if
+      if (valpar.gt.zero) then
+      if (temax.lt.hu1*stem(1)) temax=hu1*stem(1)
+      if (temax.gt.hu2*stem(2)) temax=hu2*stem(2)
+      end if
+      if (valpar.lt.zero) then
+      if (temax.gt.hu1*stem(1)) temax=hu1*stem(1)
+      if (temax.lt.hu2*stem(2)) temax=hu2*stem(2)
+      end if
+
+      if (a.lt.zero) then
+      iagain=iagain+1
+      if (sdy(1).lt.sdy(2)) then
+      temax=stem(1)
+      else
+      temax=stem(2)
+      end if
+      end if
+      if (temax.gt.vpmax) temax=vpmax
+      if (temax.lt.vpmin) temax=vpmin
+      if (a.gt.zero) iagain=0
+      expec=0.01d0*a*temax*temax+0.01d0*b*temax+0.01d0*ac
+CSN   write (79,160)temax
+CSN   write (79,165)100*expec
+
+      write (379,160)temax
+      write (379,165)100*expec
+
+      valnew=temax
+CSN   write (79,*)
+CSN   close (79)
+
+      write (379,*)
+      CALL SEQCLO(379,'KEEP')
+
+**********************************************************************   
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************   
+  120 format ('Values used for parameter',3i3,/,3d20.10)
+  130 format ('Differences found        '/,3d20.10)
+  140 format ('Parabol: a=',d20.10,1X,' b=',d20.10,1X,' c=',d20.10)
+  150 format ('Minimum of the parabol',d20.10)
+  155 format ('Difference belonging to minimum of parabol',d20.10)
+  160 format ('New parameter value',d20.10)
+  165 format ('Difference belonging to new parameter value',d20.10)
+      return
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK CPFILE
+C> @brief    file copy
+C>
+C> @details  copy file from nunit1 to nunit2
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   nunit1 : unit number for rewinding file 1
+C> @param   nunit2 : unit number for rewinding file 2
+C>
+      subroutine cpfile(nunit1,nunit2)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      character*80 qr1
+**********************************************************************   
+*                                                                    *
+*     Copy file from nunit1 to nunit2                                *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In cpfile'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In cpfile'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+CSN   rewind (nunit1)
+CSN   rewind (nunit2)
+      CALL SEQREW (nunit1)
+      CALL SEQREW (nunit2)
+   10 read (nunit1,100,err=20,end=20)qr1
+      write (nunit2,100)qr1
+      goto 10
+   20 continue
+      CALL SEQREW (nunit1)
+      CALL SEQREW (nunit2)
+**********************************************************************   
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************   
+  100 format (a80)
+      return
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK WRITEGEO
+C> @brief    copy new geomoetries
+C>
+C> @details  copy new geometries to unit nunit1
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   nunit1 : unit number for file containing new geometries
+C>
+      subroutine writegeo(nunit1)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************   
+*                                                                    *
+*     Copy new geometries to unit nunit1                             *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In writegeo'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In writegeo'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      if (axiss(1).lt.zero) then
+      if (nrestra.eq.0.and.nrestrat.eq.0.and.
+     $nrestrav.eq.0) 
+     $write (nunit1,300)qr,qmol
+      if (nrestra.gt.0) write (nunit1,301)qr,
+     $rrstra(1),qmol
+      if (nrestrav.gt.0) write (nunit1,301)qr,
+     $vrstra(1),qmol
+      if (nrestrat.gt.0) write (nunit1,301)qr,
+     $trstra(1),qmol
+      else
+      write (nunit1,310)qr,qmol
+      write (nunit1,320)axiss(1),axiss(2),axiss(3)
+      write (nunit1,320)angles(1),angles(2),angles(3)
+      end if
+      do i1=1,na
+      if (nbiolab.ne.2) write (nunit1,400)i1,qa(i1),(c(i1,i2),i2=1,3)
+      if (nbiolab.eq.2) write (nunit1,401)i1,qa(i1),(c(i1,i2),i2=1,3) !Delphi-format
+      end do
+      if (nbiolab.ne.2) write (nunit1,*)
+     
+      return
+
+  300 format (2x,a1,1x,a60)
+  301 format (2x,a1,1x,f6.2,a60)
+  310 format (2x,a1,1x,a60)
+  320 format (3f10.4)
+  400 format (i4,1x,a2,3x,3(d21.14,1x),1x,a5,1x,i5)
+  401 format (i3,2x,a2,3x,3(d21.14,1x),1x,a5,1x,i5)
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK EXTRACTGEO
+C> @brief    training set geometry information from training set
+C>
+C> @details  extracts geometry information from training set 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   nmol   : index number for training set arrays
+C>
+      subroutine extractgeo(nmol)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+**********************************************************************
+**********************************************************************   
+*                                                                    *
+*     Extract geometry information from training set                 *
+*                                                                    *
+**********************************************************************   
+      i1=nmol
+      na=naset(i1)
+      qmol=qmolset(i1)
+      qr=qrset(i1)
+      qremark(1)=qremset(i1)
+      nfc=nfcset(i1)
+      iredo=iredoset(i1)
+      iexco=iexcoset(i1)
+      ncellopt=ncellset(i1)
+      iruid=iruidset(i1)
+      icell=icellset(i1)
+      icelo2=icelo2lset(i1)
+      nmmax=nmmaxset(i1)
+      ibity=ibityset(i1)
+      vvol=vvolset(i1)
+      endpo=endposet(i1)
+      nrestra=nrestraset(i1)
+      icgeo=icgeopt(i1)
+      ifreq=ifreqset(i1)
+      iremark=1
+      do i2=1,nrestra
+      rrstra(i2)=rrstraset(i1,i2)
+      vkrstr(i2)=vkrstrset(i1,i2)
+      vkrst2(i2)=vkrst2set(i1,i2)
+      irstra(i2,1)=irstraset(i1,i2,1)
+      irstra(i2,2)=irstraset(i1,i2,2)
+      rrcha(i1)=rrchaset(i1,i2)
+      end do
+      nrestrav=nrestravset(i1)
+      do i2=1,nrestrav
+      irstrav(i2,1)=irstravset(i1,i2,1)
+      irstrav(i2,2)=irstravset(i1,i2,2)
+      irstrav(i2,3)=irstravset(i1,i2,3)
+      vrstra(i2)=vrstraset(i1,i2)
+      vkrv(i2)=vkrvset(i1,i2)
+      vkr2v(i2)=vkr2vset(i1,i2)
+      end do
+      nrestrat=nrestratset(i1)
+      do i2=1,nrestrat
+      irstrat(i2,1)=irstratset(i1,i2,1)
+      irstrat(i2,2)=irstratset(i1,i2,2)
+      irstrat(i2,3)=irstratset(i1,i2,3)
+      irstrat(i2,4)=irstratset(i1,i2,4)
+      trstra(i2)=trstraset(i1,i2)
+      vkrt(i2)=vkrtset(i1,i2)
+      vkr2t(i2)=vkr2tset(i1,i2)
+      end do
+      do i2=1,3
+      axiss(i2)=axisset(i1,i2)
+      angles(i2)=anglesset(i1,i2)
+      end do
+      do i2=1,na
+      qa(i2)=qaset(i1,i2)
+      chgbgf(i2)=chaset(i1,i2)
+      do i3=1,3
+      c(i2,i3)=cset(i1,i2,i3)
+      end do
+      end do
+
+      return
+      end
+**********************************************************************   
+**********************************************************************
+
+C*MODULE FFOPT    *DECK WRITEBGF
+C> @brief    copies new biograf-geometries
+C>
+C> @details  copy new Biograf-geometries to unit nunit1   
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   nunit1 : unit number for file containing Biograf-geometries
+C>
+      subroutine writebgf(nunit1)
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      dimension qdir(3) 
+      character*2 qt
+      character*1 qdir
+**********************************************************************   
+*                                                                    *
+*     Copy new Biograf-geometries to unit nunit1                     *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In newbgf'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In newbgf'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      irom=1
+      qdir(1)='x'
+      qdir(2)='y'
+      qdir(3)='z'
+      ibgfversion=200
+      if (ibity.eq.1) write (nunit1,1500)ibgfversion
+      if (ibity.eq.2) write (nunit1,1600)ibgfversion
+*     if (qr.ne.'F'.and.qr.ne.'5'.and.qr.ne.'Y') 
+*    $write (nunit1,1500)ibgfversion
+*     if (qr.eq.'F'.or.qr.eq.'5'.or.qr.eq.'Y') 
+*    $write (nunit1,1600)ibgfversion
+      write (nunit1,1700)qmol
+*     write (nunit1,1700)qkeyw(nprob)
+      do i1=1,iremark
+      write (nunit1,1800)qremark(i1)
+      end do
+      qruid='NORMAL RUN'
+      if (iruid.eq.0) then
+      write (nunit1,2000)
+      else
+      if (abs(endpo-endpoold).gt.1d-5) write (nunit1,2010)endpo
+      if (nmmax.ne.nmmaxold) write (nunit1,2020)nmmax
+      if (nfc.ne.nfcold) write (nunit1,2030)nfc
+      if (ncha.ne.nchaold) write (nunit1,2036)ncha
+      if (iredo.gt.1) write (nunit1,2035)iredo
+      if (icell.ne.icellold) then
+      if (icell.eq.0) write (nunit1,2033)
+      if (icell.gt.0) write (nunit1,2034)ncellopt
+      end if
+      end if
+      if (iexco.ne.0.and.nsurp.gt.0) then
+      write (nunit1,2040)vvol
+      write (nunit1,3500)
+      write (nunit1,*)
+      return
+      end if
+      if (nmcharge.gt.0) then
+      do i3=1,nmcharge
+      write (nunit1,2050)iat1mc(i3),iat2mc(i3),vmcha(i3)
+      end do
+      end if
+
+      ims=0
+      do i1=1,na
+      if (ims.eq.0.and.imove(i1).eq.0) then
+      if1=i1
+      ims=1
+      end if
+      if (ims.eq.1.and.imove(i1).eq.1) then
+      write (nunit1,2060)if1,i1-1
+      ims=0
+      end if
+      end do
+      if (ims.eq.1) then
+      write (nunit1,2060)if1,na
+      end if
+
+*     if (qr.eq.'F'.or.qr.eq.'5'.or.qr.eq.'Y') 
+      if (ibity.eq.2)
+     $write (nunit1,2100)axiss(1),axiss(2),axiss(3),angles(1),
+     $angles(2),angles(3)
+
+      if (nrestra.gt.0) write (nunit1,2300)
+      do i2=1,nrestra
+      write (nunit1,2400)
+     $irstra(i2,1),irstra(i2,2),rrstra(i2),
+     $vkrstr(i2),vkrst2(i2),rrcha(i2),itstart(i2),itend(i2)
+      end do
+
+      if (nrestrav.gt.0) write (nunit1,2500)
+      do i2=1,nrestrav
+      write (nunit1,2600)
+     $irstrav(i2,1),irstrav(i2,2),irstrav(i2,3),
+     $vrstra(i2),vkrv(i2),vkr2v(i2),zero
+      end do
+
+      if (nrestrat.gt.0) write (nunit1,2700)
+      do i2=1,nrestrat
+      write (nunit1,2800)
+     $irstrat(i2,1),irstrat(i2,2),irstrat(i2,3),
+     $irstrat(i2,4),trstra(i2),vkrt(i2),
+     $vkr2t(i2),zero
+      end do
+
+      if (nrestram.gt.0) write (nunit1,2810)
+      do i2=1,nrestram
+      write (nunit1,2820)
+     $qdir(irstram(i2,1)),irstram(i2,2),irstram(i2,3),
+     $rmstra1(i2),irstram(i2,4),irstram(i2,5),rmstra2(i2),
+     $rmstra3(i2),rmcha(i2)
+      end do
+
+      if (icgeo.eq.0.and.ingeo.eq.0) write (nunit1,2830)
+      if (icgeo.eq.1.and.ingeo.eq.1) write (nunit1,2840)
+      if (ifreq.eq.1) write (nunit1,2850)
+      write (nunit1,2900)
+      do i2=1,na
+      write (nunit1,3000)i2,qa(i2),c(i2,1),c(i2,2),c(i2,3),
+     $qa(i2),ibgr1(i2),ibgr2(i2),chgbgf(i2)
+      end do
+      write (nunit1,3100)
+      if (nsurp.lt.2) then
+      do i1=1,na
+      write (nunit1,3200)i1,(iag(i1,2+i2),i2=1,iag(i1,2))
+      end do
+      write (nunit1,3300)
+      write (nunit1,3400)estrc
+      end if
+
+      write (nunit1,3500)
+      write (nunit1,*)
+     
+      return
+ 1500 format ('BIOGRF',i4)
+ 1600 format ('XTLGRF',i4)
+ 1700 format ('DESCRP ',a60)
+ 1800 format ('REMARK ',a60)
+ 1900 format ('FFIELD ',a40)
+ 2000 format ('RUTYPE NORMAL RUN')
+ 2010 format ('RUTYPE ENDPO',f6.3)
+ 2020 format ('RUTYPE MAXIT',i6)
+ 2030 format ('RUTYPE MAXMOV',i9)
+ 2033 format ('RUTYPE NO CELL OPT')
+ 2034 format ('RUTYPE CELL OPT',i6)
+ 2035 format ('RUTYPE REDO',i6)
+ 2036 format ('RUTYPE CHARGEMET',i6)
+ 2040 format ('VCHANGE',f8.4)
+ 2050 format ('MOLCHARGE',2i4,f6.2)
+ 2060 format ('FIXATOMS',2i6)    
+ 2100 format ('CRYSTX ',6f11.5)
+ 2200 format ('CELLS ',6i5)
+ 2300 format ('#              At1 At2   R12    Force1  Force2  ',
+     $'dR12/dIter(MD) Start (MD) End (MD)')
+ 2400 format ('BOND RESTRAINT ',2i4,f8.4,f8.2,f8.4,1x,f10.7,2i8)
+ 2500 format ('#               At1 At2 At3 Angle   Force1  Force2',
+     $'  dAngle/dIteration (MD only)')
+ 2600 format ('ANGLE RESTRAINT ',3i4,2f8.2,f8.4,f9.6)
+ 2700 format ('#                 At1 At2 At3 At3 Angle   Force1  ',
+     $'Force2  dAngle/dIteration (MD only)')
+ 2800 format ('TORSION RESTRAINT ',4i4,2f8.2,f8.4,f9.6)
+ 2810 format ('#              x/y/z At1 At2    R   At3 At4 Force1',
+     $'  Force2  dR/dIteration (MD only)')
+ 2820 format ('MASCEN RESTRAINT ',a1,1x,2i4,f8.2,2i4,2f8.2,f9.6)
+ 2830 format ('GEOUPD')
+ 2840 format ('NO GEOUPD')
+ 2850 format ('FREQUENCY')
+ 2900 format ('FORMAT ATOM   (a6,1x,i5,1x,a5,1x,a3,1x,a1,1x,a5,',
+     $'3f10.5,1x,a5,i3,i2,1x,f8.5)')
+ 3000 format ('HETATM',1x,i5,1x,a2,3x,1x,3x,1x,1x,1x,5x,3f10.5,1x,
+     $a5,i3,i2,1x,f8.5)
+ 3100 format ('FORMAT CONECT (a6,12i6)')
+ 3200 format ('CONECT',12i6)
+ 3300 format ('UNIT ENERGY   kcal')
+ 3400 format ('ENERGY',5x,f14.6)
+ 3500 format ('END')
+
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK FFSAV
+C> @brief    save force field
+C>
+C> @details  save changes in the force field 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine ffsav
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      character*80 qr1
+**********************************************************************   
+*                                                                    *
+*     Save changes in force field                                    *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In ffsav'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In rewind2'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+CSN   rewind (4)
+CSN   write (83,100)sdy(3)
+      CALL SEQREW(4)
+      write (383,100)sdy(3)
+   10 read (4,200,err=20,end=20)qr1
+CSN   write (83,200)qr1
+      write (383,200)qr1
+
+CSN   rewind (304)
+      CALL SEQREW(304)
+      write (383,100)sdy(3)
+CSN label 10 duplicate removed; 4 versus 304
+      read (304,200,err=20,end=20)qr1
+      write (383,200)qr1
+      goto 10
+   20 continue
+CSN   rewind (4)
+CSN   rewind (304)
+      CALL SEQREW(4)
+      CALL SEQREW(304)
+**********************************************************************   
+*                                                                    *
+*     Format part                                                    *
+*                                                                    *
+**********************************************************************   
+  100 format ('Error force field:',f12.4)
+  200 format (a80)
+      return
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK FFEXT
+C> @brief    force field extrapolation
+C>
+C> @details  extrapolates between two force fields 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine ffext
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      dimension fpar1(7,80,80),fpar2(7,80,80)
+      character*40 qff1,qff2
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In ffext'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In ffext'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+**********************************************************************   
+*                                                                    *
+*     Extrapolate between two force fields                           *
+*                                                                    *
+**********************************************************************   
+CSN   write (6,*)'First force field file (old force field)'
+      read (5,'(a40)')qff1
+CSN   write (6,*)'Second force field file (new force field)'
+      read (5,'(a40)')qff2
+CSN   write (6,*)'Extrapolation factor'
+      read (5,*)vextr
+
+CSN   open (4,file='/u1/sean/gamessnew/ffparams/qff1',status='old')
+CSN   write(6,*)'calling ffin2 2'
+CSN   call ffin2(4)
+CSN   close (4)
+
+      CALL SEQOPN(304,'FORT:4','UNKNOWN',.FALSE.,'FORMATTED')
+      call ffin2(304)
+      CALL SEQCLO(304,'KEEP')
+
+CSN   write(6,*)'after ffin2'
+      do i1=1,7
+      do i2=1,80
+      do i3=1,80
+      fpar1(i1,i2,i3)=fpar(i1,i2,i3)
+      end do
+      end do
+      end do
+
+CSN   open (4,file='/u1/sean/gamessnew/ffparams/qff2',status='old')
+CSN   write(6,*)'calling ffin2 3'
+CSN   call ffin2(4)
+CSN   close (4)
+
+      CALL SEQOPN(304,'FORT:4','UNKNOWN',.FALSE.,'FORMATTED')
+      call ffin2(304)
+      CALL SEQCLO(304,'KEEP')
+
+      do i1=1,7
+      do i2=1,80
+      do i3=1,80
+      fpar2(i1,i2,i3)=fpar(i1,i2,i3)
+      end do
+      end do
+      end do
+      
+      do i1=1,7
+      do i2=1,80
+      do i3=1,80
+      change=fpar2(i1,i2,i3)-fpar1(i1,i2,i3)
+      fpar(i1,i2,i3)=fpar2(i1,i2,i3)+vextr*change
+      end do
+      end do
+      end do
+
+CSN   call ffchng(5,13,big,-big)
+      call ffchng(5,313,big,-big)
+      return
+      end
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK INCREM
+C> @brief    heat of formation increments
+C>
+C> @details  optimize heat of formation increments 
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+      subroutine increm
+
+**********************************************************************   
+      include 'cbka.blk'
+      include 'opt.blk'
+      dimension vn(nsort,maxmdat+1),vt(maxmdat,nsort),vtv(nsort,nsort)
+      dimension delt(maxmdat+1),sdevhf(maxmdat),vinn(nsort),vb(nsort)
+**********************************************************************   
+*                                                                    *
+*     Optimize heat of formation increments                          *
+*                                                                    *
+**********************************************************************   
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In increm'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In increm'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      nso2=nso
+*     nso2=2
+      gcor=4.0d0*rgasc*xjouca*0.29815d0
+      do i1=1,iheatf
+      delt(i1)=compdat(iheada(i1))-caldat(iheada(i1))-gcor
+      sdevhf(i1)=weightdat(iheada(i1))
+      end do
+      if (nincrop.eq.0) goto 10   !No increment optimisation
+      do i1=1,iheatf
+      i3=iheada2(i1)
+      do i2=1,nso2
+      vn(i2,i1)=float(molin(i3,i2))
+      end do
+      end do
+
+      do i1=1,iheatf
+      do i2=1,nso2
+      vt(i1,i2)=vn(i2,i1)
+      end do
+      end do
+
+      do i3=1,nso2
+      do i2=1,nso2
+      sum=zero
+      do i1=1,iheatf
+      sum=sum+vt(i1,i3)*vn(i2,i1)/(sdevhf(i1)**2)
+      end do
+      vtv(i2,i3)=sum
+      end do
+      end do
+
+      do i1=1,nso2
+      sum=zero
+      do i2=1,iheatf
+      sum=sum+vt(i2,i1)*delt(i2)/(sdevhf(i2)**2)
+      end do
+      vb(i1)=sum
+      end do
+
+      call matsym5(nso2,nso2,nso2,nso2,vtv,vinn,vb)
+CSN   open (24,file='/u1/sean/gamessnew/ffparams/fort.24',
+CSN  *      status='unknown',access='append')
+CSN   write (24,100)(vinn(i1),i1=1,nso2)
+CSN   close (24)
+
+      CALL SEQOPN(324,'FORT24','UNKNOWN',.FALSE.,'FORMATTED')
+      write (324,100)(vinn(i1),i1=1,nso2)
+      CALL SEQCLO(324,'KEEP')
+
+      do i1=1,nso
+      vincr(i1)=vinn(i1)
+      fpar(2,i1,19)=vinn(i1)
+      end do
+   10 if (nincrop.eq.0) then
+      do i1=1,nso
+      vinn(i1)=vincr(i1)
+      end do
+      end if
+      do i1=1,iheatf
+      i3=iheada2(i1)
+      do i2=1,nso2
+      caldat(iheada(i1))=caldat(iheada(i1))+molin(i3,i2)*vinn(i2)
+      end do
+      caldat(iheada(i1))=caldat(iheada(i1))+gcor
+      end do
+      return
+************************************************************************
+*                                                                      *
+*     Format part                                                      *
+*                                                                      *
+************************************************************************
+  100 format (20f10.4)
+      end 
+**********************************************************************
+**********************************************************************
+
+C*MODULE FFOPT    *DECK MATSYM5
+C> @brief    lower triangle and backsubstitution 
+C>
+C> @details  construction of the lower triangle and backsubstitution  
+C>
+C> @author   Sean Nedd (implementation), Adri van Duin (original author), 2010-2012
+C>
+C> @date 11-11-14 - Sean A. Nedd
+C>
+C> @param   n      : final index value of matrix
+C> @param   ndimm  : dimension of matrix
+C> @param   ndimvx : dimension of x vector
+C> @param   ndimvy : dimension of y vector
+C> @param   rmat   : matrix
+C> @param   vecx   : x vector
+C> @param   vecy   : y vector
+C>
+      subroutine matsym5(n,ndimm,ndimvx,ndimvy,rmat,vecx,vecy)
+
+**********************************************************************
+      include 'cbka.blk'
+      DIMENSION RMAT(nsort,nsort),VECX(nsort),VECY(nsort)
+************************************************************************
+*                                                                      *
+*     Construction of the lower triangle and backsubstitution          *
+*     VERTICAL: ONLY for SYMMETRIC matrices                            *
+*                                                                      *
+************************************************************************
+      if (ndebug.eq.1) then
+CSN   open (65,file='/u1/sean/gamessnew/ffparams/fort.65',
+CSN  *      status='unknown',access='append')
+CSN   write (65,*) 'In matsym5'
+CSN   call timer(65)
+CSN   close (65)
+
+      CALL SEQOPN(365,'FORT65','UNKNOWN',.FALSE.,'FORMATTED')
+      write (365,*) 'In matsym5'
+      call timer(365)
+      CALL SEQCLO(365,'KEEP')
+
+      end if
+      DO 11 K=1,N
+      DIAG=RMAT(K,K)
+      DO 9 L=K+1,N
+      VECX(L)=RMAT(L,K)
+    9 RMAT(L,K)=RMAT(L,K)/DIAG
+      VECY(K)=VECY(K)/DIAG
+      RMAT(K,K)=1.0D0
+      DO 11 L=K+1,N
+      FACTOR=VECX(L)
+      DO 10 M=L,N
+   10 RMAT(M,L)=RMAT(M,L)-FACTOR*RMAT(M,K)
+   11 VECY(L)=VECY(L)-FACTOR*VECY(K)
+      DO 12 K=N,1,-1
+      VECX(K)=VECY(K)
+      DO 12 L=K+1,N
+   12 VECX(K)=VECX(K)-RMAT(L,K)*VECX(L)
+
+      RETURN
+
+      END
+
+************************************************************************
+**********************************************************************
+
+      double precision function fgauss(sigma,v0,dseed)
+
+**********************************************************************
+      implicit double precision (a-h,o-z),integer (i-n)
+    1 vr1=2.0d0*random(dseed)-1.0d0
+      vr2=2.0d0*random(dseed)-1.0d0
+      r=vr1*vr1+vr2*vr2
+      if (r.ge.1.0d0) goto 1
+      fac=vr1*sqrt(-2.0d0*log(r)/r)
+      fgauss=v0+sigma*fac
+      return
+      end
+**********************************************************************   
+**********************************************************************
+
+      double precision function random(dseed)
+
+**********************************************************************
+      implicit double precision (a-h,o-z),integer (i-n)
+      data d2p31m/2147483647.d0/
+      data d2p31/2147483711.d0/
+          dseed=dmod(16807.d0*dseed,d2p31m)
+          random=dseed/d2p31
+      return
+      END
+**********************************************************************   

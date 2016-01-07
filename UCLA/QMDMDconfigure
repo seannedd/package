@@ -1,0 +1,1333 @@
+#!/bin/bash 
+
+#
+# A script to run the QM/DMD program (developed by Manuel Sparta)
+# by Sean Nedd
+#
+
+echo "QM/DMD (Quantum Mechanics/Discrete Molecular Dynamics) v.1.1 program"
+echo "This QMDMDconfigure script is an interactive guide for the setup and running of QM/DMD calculations."
+echo "A full manual of the method can be found in ~sean/bin/DMD/MANUAL in QMDMDmanual."
+echo "Also, a summary can be found in the file QMDMDsummary in the same directory."
+echo "Continue [y/N] "
+check=n
+read check
+ if [ "$check" = 'y' ]; then echo "!!!!May the Force be with you !!!!"; fi
+ if [ "$check" = 'n' -o "$check" = 'N' -o "$check" = '' ]; then exit; fi
+echo
+
+#Skip to Menu options
+echo "****************"
+echo "You may skip to the Menu troubleshooting section options [19], [20], [21], and [22]."
+echo "Skip to Troubleshooting options?[y/N]"
+echo "(In order to run the QM/DMD setup normally choose \"N\" or press enter)"
+read skip
+
+#((((((((( start of skip )))))))))
+if [ "$skip" = 'y' ]; then
+ echo
+
+else
+
+ if [ "$skip" = 'N' -o "$skip" = 'n' -o "$skip" = '' ]; then
+#>>>>>>>>>>>>>>>>>>>>>>
+#Add to your $PATH
+  echo "****************"
+  echo "In order to run the QMDMDconfigure fully:"
+  echo "~sean/bin ~sean/bin/DMD and ~sean/bin/DMD/bin must be included in your \$PATH. or your analogous pathways to the QM/DMD files."
+  echo
+  echo "To begin, open a second terminal window and make a new directory for your QM/DMD calculation in that window. Enter that directory."
+  echo "[Running this QMDMDconfigure script is easier if done from your new directory.]"
+  echo "Press enter to continue ..."
+  read
+
+  config=n
+  if [ -s config ]; then
+   echo "\"config\" file is present and should hold your path name and main pdf from a previous run."
+   echo "Use the \"config\" file?[Y/n]" 
+   read config
+  fi
+
+  if [ "$config" = 'Y' -o "$config" = 'y' -o "$config" = '' ]; then
+   source config
+   if [ ! -d "$fullpathname" ]; then 
+    echo "$fullpathname does not exist." 
+    echo "Would you like to use your present working directory as your full path name?[Y/n]"
+    read present
+    if [ "$present" = 'Y' -o "$present" = 'y' -o "$present" = '' ]; then
+     cat config > config.save
+     fullpathname=$PWD
+    else
+     if [ "$present" = 'n' ]; then
+      echo "Enter the full pathname of your directory then press enter"
+      read fullpathname
+      while [ ! -d "$fullpathname" ]
+      do
+       echo "$fullpathname still does not exist. Enter a correct path name."
+       read fullpathname
+      done
+     fi
+    fi
+   fi
+   cd $fullpathname
+   echo "fullpathname=$fullpathname" >> config
+   touch config1
+   source config1
+   if [ ! -f "$yourfilename" ]; then
+    echo "$yourfilename does not exist in your current directory. Enter then name of your structure pdb file."
+    read yourfilename 
+    if [ -f "$yourfilename" ]; then
+     echo "yourfilename=$yourfilename" >> config1
+    else
+     echo "$yourfilename still does not exist in your current directory. Obtain correct filename and try again. Exiting ..."
+     exit
+    fi
+   else
+    if [ -f "$yourfilename" ]; then
+     echo "Do you want to change your structure file name?[y/N]"
+     read changefile
+     if [ "$changefile" = 'y' ]; then
+      echo "****************"
+      echo "Enter your directory." 
+      echo "Make the file \"yourfilename.pdb\" that holds your structure."
+      echo "(pdb files may be obtained from sources such as www.pdb.org)"
+      echo "Enter your structure file name."
+      read yourfilename
+      while [ ! -f "$yourfilename" ]
+      do
+       echo "Enter a valid file holding your structure."
+       read yourfilename
+      done 
+     else
+      if [ "$changefile" = 'N' -o "$changefile" = 'n' -o "$changefile" = '' ]; then echo; fi
+     fi
+     echo "yourfilename=$yourfilename" >> config1
+    fi
+   fi 
+
+  else
+ 
+   if [ "$config" = 'n' ]; then
+    echo "Would you like to use your present working directory as your full path name?[Y/n]"
+    read present
+    if [ "$present" = 'Y' -o "$present" = 'y' -o "$present" = '' ]; then
+     fullpathname=$PWD
+    else
+     if [ "$present" = 'n' ]; then
+      echo "Enter the full pathname of your directory then press enter"
+      read fullpathname
+# Go to user defined directory
+      while [ ! -d "$fullpathname" ]
+      do
+       echo "$fullpathname does not exist. Enter a valid pathname."
+       read fullpathname
+      done
+     fi
+    fi
+    echo "fullpathname=$fullpathname" > config
+    cd $fullpathname
+    echo
+    echo "****************"
+    echo "Enter your directory." 
+    echo "Make the file \"yourfilename.pdb\" that holds your structure."
+    echo "(pdb files may be obtained from sources such as www.pdb.org)"
+    echo "Enter the name of \"yourfilename.pdb\":"
+    read yourfilename 
+    while [ ! -f "$yourfilename" ]
+    do
+     echo "$yourfilename does not exist. Enter a valid structure file name."
+     read yourfilename
+    done
+    echo "yourfilename=$yourfilename" > config1
+   fi
+  fi
+ 
+  if [ -f "initial.pdb" ]; then
+   overwrite=n
+   echo "initial.pdb already exists. Overwrite?[y/N]"
+   read overwrite
+   if [ "$overwrite" = 'y' ]; then
+    echo "Any original \"initial.pdb\" file is now saved in \"initialsaved.pdb\"."
+    cp initial.pdb initialsaved.pdb
+    cp $yourfilename initial.pdb
+   else
+    if [ "$overwrite" = 'N' -o "$overwrite" = 'n' -o "$overwrite" = '' ]; then
+    echo "\"initial.pdb\" kept."
+    fi
+   fi
+  else
+   cp $yourfilename initial.pdb
+  fi
+  echo "Press enter to continue ..."
+  read
+  echo
+ 
+ fi
+#<<<<<<<<<<<<<<<<<<<<<<
+fi
+#((((((((( end of skip )))))))))
+
+echo "****************"
+section=0
+readsection=N
+echo "Here are the QM/DMD sections and options for skipping to those sections:"
+echo "[0] Editing the \"initial.pdb\" file."
+echo "[1] Make and edit the \"topparam.list\" file for all fragment files."
+echo "[2] Convert \"fragment.pdb\" file to \"fragment.mol2\" files."
+echo "[3] Edit the \"fragment.mol2\" files."
+echo "[4] Edit the \"initial.pdb\" file for "Zn" DMD hack, and Eh indexing for non-polar Hydrogens."
+echo "[5] Generate the \"new.pdb\" DMD file from \"initial.pdb\"."
+echo "[6] Generate the \"inConstr\" DMD file for electrostatic interactions."
+echo "[7] Edit the \"inConstr\" DMD file for atom constraints and hydrogen positions during the DMD calculation."
+echo "[8] Identify residues and fragments to be included in QM region from \"new.pdb\" by including in reslist."
+echo "[9] Extract the reslist from \"new.pdb\" into \"x.pdb\"."
+echo "[10] Add all missing Hydrogens to \"x.pdb\" by capping dangling bonds into the \"h.pdb\" file."
+echo "[11] Identify the atoms to be included in the QM region from \"h.pdb into \"input\" file."
+echo "[12] Define how dangling bonds will be saturated after chopping in the \"h.pdb\" file into the \"input\" file."
+echo "[13] Define what atoms are frozen in the \"h.pdb\" file into the \"input\" files."
+echo "[14] Prepare files involved in hacking DMD (Spec1.sh and Spec2.sh files)."
+echo "[15] Prepare the \"coord\" file for use in Turbomole, extracted from \"h.pdb\"."
+echo "[16] Set up the Turbomole calculation."
+echo "[17] Ready to start QM/DMD calculations by adding QM/DMD run setup to the \"input\" file."
+echo "[18] Check that the DMD calculation will not stall due to errors in the constraints file."
+echo "[19] Submitting the QM/DMD job."
+echo "[20] Notes on running QM/DMD."
+echo "[21] Errors and solutions."
+echo "[22] QM/DMD analysis suggestions and tools."
+echo "[23] End of QM/DMD setup and execution."
+echo
+echo "Enter the number of the section of interest:"
+read section
+
+if [ -z "$section" ]; then section=0; fi 
+if [ "$section" -lt '0' -o "$section" -gt '23' ]; then section=0; fi 
+if [ "$skip" = 'Y' -o "$skip" = 'y' ]; then section=19; fi
+if [ "$section" -lt '23' ]; then
+ echo "Only execute this section?[y/N]"
+ read readsection
+ if [ "$readsection" = '' ]; then readsection=N; fi
+fi
+
+if [ "$section" -lt '1' ]; then
+echo "****************"
+echo "Edit the \"initial.pdb\" file."
+echo
+echo "There are two options for obtaining a correct \"initial.pdb\" file ..."
+echo "[1] Manually modify the current \"initial.pdb\" file."
+echo "[2] Assisted generation of the \"initial.pdb\" file from \"$yourfilename\"."
+echo
+echo "[1] The \"initial.pdb\" file may be manually modified as follows:"
+echo "In your final \"initial.pdb\" file, the first set of lines start with ATOM."
+echo "These lines are ended by a line starting with TER."
+echo "The last set of lines start with HETATM and include metals, substrates and other added fragments."
+echo "Delete all other lines"
+echo "After all corrections, the end of the \"initial.pdb\" file should look like the following example:"
+echo
+echo "ATOM   1517  CE1 PHE A 156      98.438  86.163  93.481  1.00  0.00           C"
+echo "ATOM   1518  CE2 PHE A 156      98.804  88.214  92.303  1.00  0.00           C"
+echo "ATOM   1519  CZ  PHE A 156      98.242  86.935  92.346  1.00  0.00           C"
+echo "ATOM   1520  HN  PHE A 156     102.502  89.001  93.619  1.00  0.00           H"
+echo "TER"
+echo "HETATM    1 NI   NI2 B   1      95.587  91.415 100.665  1.00  0.00          Zn"
+echo "TER"
+echo "HETATM    2 O01  SUB B   2      95.541  93.192  99.619  1.00  0.00          O"
+echo "HETATM    3 C02  SUB B   2      95.105  93.298  98.447  1.00  0.00          C"
+echo "HETATM    4 C04  SUB B   2      94.443  92.349  97.614  1.00  0.00          C"
+echo "HETATM    5 O05  SUB B   2      93.933  92.859  96.454  1.00  0.00          O"
+echo "HETATM    6 C07  SUB B   2      94.199  91.010  98.047  1.00  0.00          C"
+echo "HETATM    7 O08  SUB B   2      94.748  90.469  99.066  1.00  0.00          O"
+echo "HETATM    8 C09  SUB B   2      93.216  90.131  97.281  1.00  0.00          C"
+echo "HETATM    9 C12  SUB B   2      93.854  88.837  96.759  1.00  0.00          C"
+echo "HETATM   10 S15  SUB B   2      92.682  87.650  95.993  1.00  0.00          S"
+echo "HETATM   11 C16  SUB B   2      91.827  86.966  97.470  1.00  0.00          C"
+echo "HETATM   12 H03  SUB B   2      95.172  94.318  97.971  1.00  0.00          Eh"
+echo "HETATM   13 H10  SUB B   2      92.743  90.677  96.445  1.00  0.00          Eh"
+echo "HETATM   14 H11  SUB B   2      92.413  89.877  98.016  1.00  0.00          Eh"
+echo "HETATM   15 H13  SUB B   2      94.409  88.327  97.568  1.00  0.00          Eh"
+echo "HETATM   16 H14  SUB B   2      94.571  89.081  95.950  1.00  0.00          Eh"
+echo "HETATM   17 H17  SUB B   2      92.551  86.490  98.160  1.00  0.00          Eh"
+echo "HETATM   18 H18  SUB B   2      91.260  87.747  98.013  1.00  0.00          Eh"
+echo "HETATM   19 H19  SUB B   2      91.119  86.200  97.098  1.00  0.00          Eh"
+echo "TER"
+echo "ENDMDL"
+echo
+echo "Remember to add \"ENDMDL\" at the bottom of your \"initial.pdb\" file."
+echo "Some residue names may not be recognized by DMD."
+echo "In this case add the residues as a fragment at the bottom of "initial.pdb" and re-number the other ATOMs."
+echo "The script \"make_init.sh\" can be used to perform the re-numbering by running \"make_init.sh initial.pdb\""
+echo "... this will produce a file called \"init.pdb\", which should hold the correctly re-numbered \"initial.pdb\""
+echo "... and which can be then copied as the new \"initial.pdb\"."
+echo
+echo "[2] Assisted generation of the \"initial.pdb\""
+echo "Attempt to generate an \"initial.pdb\" file?[y/N]"
+alter=N
+read alter
+
+if [ "$alter" = 'Y' -o "$alter" = 'y' ]; then
+ removeold=N
+ echo "Remove old "initial" file data?[y/N]"
+ read removeold
+ if [ "$removeold" = 'y' -o "$removeold" != '' ]; then rm initialsave.pdb; fi
+ if [ "$removeold" = 'N' -o "$removeold" = 'n' -o "$removeold" = '' ]; then echo "Keeping \"initialsave.pdb\""; fi
+ if [ ! -f "initialsave.pdb" ]; then
+  echo "Copying \"initial.pdb\" to \"initialsave.pdb\" ..."
+  echo "Copying \"$yourfilename\" to \"initl.pdb\" ..."
+  echo "Copying \"$yourfilename\" to \"fragment.pdb\" ..."
+  cp initial.pdb initialsave.pdb
+  cp $yourfilename initl.pdb
+  cp $yourfilename fragment.pdb
+ else
+  if [ "$alter" = 'N' -o "$alter" = 'n' -o "$alter" = '']; then
+  echo "\"initialsave.pdb\" already exists."
+  if [ -f "initl.pdb" ]; then echo "\"initl.pdb\" already exists."; fi
+  if [ -f "fragment.pdb" ]; then echo "\"fragment.pdb\" already exists."; fi
+  echo "Checks the files, \"initl.pdb\" and \"fragment.pdb\""
+  fi
+ fi
+ echo "Delete the fragments from the \"initl.pdb\" file."
+ echo "Delete the main protein from the \"fragment.pdb\" file."
+ echo "Make sure that all fragments are separated by a line starting with \"TER\"."
+ echo "Press enter to continue ..."
+ read
+ echo "We now will reorder \"initl.pdb\" and \"fragment.pdb\"."
+ echo "Running make_frags.sh fragment.pdb ..."
+ echo "Running make_init.sh initl.pdb ..."
+ make_frags.sh fragment.pdb
+ make_init.sh initl.pdb
+ echo "Outputs \"frag.pdb\" that holds parsed info from \"fragment.pdb\"."
+ echo "Make sure that all fragments are separated by a line starting with \"TER\"."
+ echo "Re-indexes atoms remaining in \"initial.pdb\" within the output file \"init.pdb\"."
+ echo
+ echo "Appending \"frag.pdb\" to \"init.pdb\" to give the \"initial.pdb\" file."
+ cat init.pdb > initial.pdb
+ cat frags.pdb >> initial.pdb
+ correctinit=y
+ frag=n
+ init=n
+ while [ "$correctinit" = 'N' -o "$correctinit" = 'n' ]
+ do
+  echo "Is the \"initial.pdb\" file correct?[y/N]"
+  read correctinit 
+  if [ "$correctinit" = 'N' -o "$correctinit" = 'n' ]; then
+   echo "Double check your \"fragment.pdb\" and \"initl.pdb\" files."
+   echo "Press enter to attempt to regenerate \"initial.pdb\" when finished editing ... "
+   read
+   echo "Running make_initial.sh ... "
+   make_initial.sh
+   echo "The previous \"initial.pdb\" file is saved as \"initial(1-7).pdb\"."
+   echo "The last \"initial.pdb\" file is saved as \"initialsave.pdb\""
+  fi
+ done
+fi
+echo "Press enter to continue ..."
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '2' ]; then
+# Make topparam.list
+echo "****************"
+echo "Edit the \"topparam.list\" file"
+if [ -s "topparam.list" ]; then
+ echo "\"topparam.list\" is already present"
+else
+ echo "A \"topparam.list\" example file will now be generated."
+ echo "MOL   HOH      ./hoh.mol2" >> topparam.list
+ echo "MOL   FE2      ./fe.mol2" >> topparam.list
+fi
+echo "topparam.list holds fragents (such as metals and substrate information) in the format:"
+echo "[For example]"
+echo
+echo "MOL   HOH      ./hoh.mol2"
+echo "MOL   FE2      ./fe.mol2"
+echo
+echo "In the above example, the two files hoh.pdb and fe.pdb (or \"fragment.pdb\" files) hold the coordinates for hoh and fe respectively."
+echo "These coordinates are taken from \"yourfilename.pdb\"."
+echo "These coordinates must be taken from \"frag.pdb\" or the unaltered \"initial.pdb\" file if the \"initial.pdb\" was generated."
+echo
+echo "The \"HOH\" and \"FE2\" in the above example must match the residue in the \"initial.pdb\" file."
+echo 
+echo "Make the pdb fragment files related to your \"topparam.list\" file"
+echo "For the fe.mol2 example, the \"fe.pdb\" file needs to be made."
+echo "The fe coordinates are obtained from \"yourfilename.pdb\" and are copied into \"fe.pdb\"."
+echo "The coordinates for all fragments and the pdb files are all obtained in the same manner."
+echo "Press enter when done ..."
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '3' ]; then
+#convert fragment.pdb to fragment.mol2 files
+echo "****************"
+echo "We now convert your fragment.pdb files to fragment.mol2 format:"
+echo "Enter the name of your fragment files (without the .pdb extension) pressing enter after each entry. Type \"done\" and press enter when complete." 
+read fragment
+if [ "$fragment" = '' ]; then fragment=done; fi
+while [ "$fragment" != 'done' ]
+do
+ echo "Running babel -i pdb "$fragment".pdb -o mol2 "$fragment".mol2" 
+ if [ -f $fragment.pdb ]; then babel -i pdb "$fragment".pdb -o mol2 "$fragment".mol2; fi 
+ echo "Enter the next fragment, or enter \"done\"." 
+ read fragment
+ if [ "$fragment" = '' ]; then fragment=done; fi
+done
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '4' ]; then
+#Edit the fragment files for "Zn" DMD hack, and Eh indexing for non-polar Hydrogens
+echo "****************"
+echo "Edit the fragment.mol2 files"
+echo "For the Metals, change the metal name in the 6th variable position to \"Zn\" (allows DMD to run since DMD only currently recognizes Zn)"
+echo "For example, in the case of fe.mol2:"
+echo 
+echo "@<TRIPOS>MOLECULE"
+echo "fe.pdb"
+echo " 1 0 0 0 0"
+echo "SMALL"
+echo "GASTEIGER"
+echo "Energy = 0"
+echo ""
+echo "@<TRIPOS>ATOM"
+echo "      1 FE           -6.2410     -5.6930    2.3610  Zn    180   FE2180     0.0000"
+echo "@<TRIPOS>ATOM"
+echo
+
+echo "For non-polar Hydrogens, change to "Eh""
+echo "For example:"
+echo
+echo "    17  H4D      -3.2900   -12.0510   -19.8920 Eh    4  DNC4          0.0664"
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '5' ]; then
+#Edit the initial.pdb file for "Zn" DMD hack, and Eh indexing for non-polar Hydrogens
+echo "If the \"initial.pdb\" file was generated, edit the \"initial.pdb\" file with the same changes made to the fragment.mol2 files as explained earlier."
+echo "Note: Never copy the coordinates from the edited \"initial.pdb\" file to make any of the \"fragment.pdb\" files."
+echo "      (Use \"$yourfilename\" instead.)"
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '6' ]; then
+#Generating new.pdb
+echo "****************"
+echo "We now convert \"initial.pdb\" to the DMD formatted file \"new.pdb\""
+echo "Running pdb_to_pdbDMD.sh initial.pdb new.pdb"
+echo "A \"GOOD TO GO\" message indicates that there are no formal errors in your files."
+pdb_to_pdbDMD.sh initial.pdb new.pdb
+while [ -f "debug" ]
+do
+ echo "Error converting \"initial.pdb\" to \"new.pdb\"."
+ echo "Edit \"topparam.list\" and \"*.mol2\" files."
+ echo "Press enter to attempt conversion again ..."
+ read
+ rm debug debug1 debug2
+ pdb_to_pdbDMD.sh initial.pdb new.pdb
+done
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '7' ]; then
+#Generating inConstr
+echo "****************"
+echo "We now generate pairwise electrostatic interactions into the \"inConstr\" file."
+echo "Pairwise electrostatic interactions are done only for charged residue types."
+echo "First, the inConstr file will be generated and then the file can be edited."
+echo
+echo "Press enter to continue ..."
+read
+if [ -s "inConstr" ]; then
+ echo "inConstr exists. Overwrite? [y/N]"
+ read Constraint
+ if [ "$Constraint" = 'y' ]; then
+  echo "Changing \"inConstr\" to \"inConstr.save\". "
+  echo "[It is better to regenerate an inConstr file without the last one present since user defined info may cause conflicts.]"
+  mv inConstr inConstr.save
+  echo "running genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr ..."
+  genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr
+ else
+  if [ "$Constraint" = 'N' -o "$Constraint" = 'n' -o "$Constraint" = '' ]; then echo; fi
+ fi
+else
+ echo "running genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr ..."
+ genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr
+fi
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '8' ]; then
+#Edit inConstr
+echo "****************"
+echo "Edit the inConstr file by adding additional constraints for the DMD part of the simulation using the following options added to the bottom of the "inConstr" file:"
+echo "[Look at \"new.pdb\" (using pymol or chimera) to determine which atoms require protonation or deprotonation, particularly in your active site.]"
+echo
+echo "Static 1.96,98,140.NE2                    #(In chain 1, freeze the atom labeled \"NE2\" in residues 96,98, and 140)"
+echo "Static 1.102.OE2                          #(In chain 1, freeze the atom labeled \"OE2\" in residue 102)"
+echo "Static 2.*.*                              #(In chain 2, freeze all atoms in all residues)"
+echo
+echo "AtomPairRel 1.46.CE1 2.1.CU -0.01 +0.01   #(Allow the bond distance to vary by only +/-0.01 angstroms between CE1 (chain 1, residue 46) and CU (chain 2, residue 1))"
+echo
+echo "Deprotonate 1.6.SG                        #(Deprotonate atom SG in chain 1, residue 6)"
+echo "Protonate 1.6.SG                          #(Protonate atom SG in chain 1, residue 6)"
+echo "HBondAcceptor 1.6.SG                      #(Atom SG in chain 1, residue 6 is now a Hydrogen bond acceptor))"
+echo
+echo "Note: Deprotonate and Protonate are required hacks since Chimera will perform Hydrogen capping through each of the Iterations."
+echo "      If the hydrogens are in the wrong positions after chopping, Deprotonate and Protonate is used to fix this for the DMD calculation."
+echo "      For the QM region, the chop.pdb must be directly edited after generation later on in the QMDMD setup." 
+echo
+echo "Deprotonate, Protonate, and HBondAcceptor may also be formatted in the following way:"
+echo "Deprotonate A:6:SG                        #(Deprotonate atom SG in chain A, residue 6)"
+echo "Protonate A:6:SG                          #(Protonate atom SG in chain A, residue 6)"
+echo "HBondAcceptor A:6:SG                      #(Atom SG in chain A, residue 6 is now a Hydrogen bond acceptor))"
+echo
+echo "Note: if these keywords change the positions of, add, or remove atoms, then the inConstr file electrostatic interactions must be recomputed using:"
+echo "genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr"
+echo "Re-run this command after first correcting the \"new.pdb\" file using the pdb_to_pdbDBD.sh script."
+echo
+
+echo "Re-run pdb_to_pdbDMD.sh to account for changed atom positions?[Y/n]"
+read pdb
+if [ "$pdb" != 'Y' -o "$pdb" != 'y' -o "$pdb" != 'n' -o "$pdb" != '' ]; then pdb=Y; fi
+
+if [ "$pdb" = 'Y' -o "$pdb" = 'y' -o "$pdb" = '' ]; then
+echo "Re-running"
+echo "pdb_to_pdbDMD.sh initial.pdb new.pdb"
+echo "in order to fix hydrogen positions using changes to modified" 
+echo "Note: if these keywords change the positions of, add, or remove atoms, then the inConstr file electrostatic interactions must be recomputed using:"
+echo "genESC.linux ~sean/bin/DMD/parameter/ new.pdb topparam.list >> inConstr"
+
+pdb_to_pdbDMD.sh initial.pdb new.pdb
+
+while [ -f "debug" ]
+do
+ echo "Error converting \"initial.pdb\" to \"new.pdb\"."
+ echo "Edit \"topparam.list\" and \"*.mol2\" files."
+ echo "Press enter to attempt conversion again ..."
+ read
+ rm debug debug1 debug2
+ pdb_to_pdbDMD.sh initial.pdb new.pdb
+done
+
+else
+
+if [ "$pdb" = 'n' ]; then echo; fi
+fi
+
+echo "Press enter when done ..."
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '9' ]; then
+#Identify residues and fragments to be included in QM region
+echo "****************"
+echo "We now identify residues and fragments to be included in QM region."
+echo "We need to open \"new.pdb\" file and identify these coodinates using pymol."
+echo "Type \"pymol new.pdb\"."
+echo "Identify and record (write down) the residue names and numbers, and corresponding chain letters, which will make up the QM region."
+echo
+echo "Compile the list of residues/fragments (called \"reslist\") into the file named \"input\" in the following format:"
+echo "export reslist=(\"VAL A   5\" \"CYS A   6\" \"THR A   7\" \"VAL A   8\" \"CYS A   9\" \"GLY A  10\" \"CU B   1\" etc)"
+echo "[The chain letters are used instead of the chain numbers.]"
+echo
+echo "The spacing is very important!!"
+echo "The spacing and residue names must match those in \"new.pdb\"."
+echo "It is easier to copy the format directly from the \"new.pdb\" file, since the format must match the same in that file."
+echo
+echo "Press enter when done ..."
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '10' ]; then
+#Extract the reslist from new.pdb into x.pdb
+echo "****************"
+echo "We now extract the reslist from \"new.pdb\" and put into \"x.pdb\"."
+echo "This will print out the list of residues and fragments used for the QM calculation."
+echo "If error, double-check your reslist setup and the \"new.pdb\" file"
+echo
+echo "Press enter to continue ..."
+extract=good
+read
+if [ -s "x.pdb" ]; then
+ echo "x.pdb exists. Overwrite?[y/N]"
+ read x
+ if [ "$x" = 'y' ]; then
+  while [ "$extract" != 'y' ]
+  do
+  echo "running extract_qm.sh new.pdb x.pdb"
+  extract_qm.sh new.pdb x.pdb
+  echo "Confirm the correctness of \"x.pdb\""
+  echo "Note that only polar Hydrogen atoms and Hydrogens listed as \"Eh\" in the .mol2 files will be present in \"x.pdb\"."
+  echo "Type \"pymol x.pdb\""
+  echo "Is the output correct?[y/N]"
+  read extract
+  if [ "$extract" != 'y' -o "$extract" = '' ]; then
+   echo "Edit reslist in input file and new.pdb. Press enter when done."
+   read 
+  fi
+  done
+ fi
+else
+ if [ "$x" = 'N' -o "$x" = 'n' -o "$x" = '' ]; then
+ while [ "$extract" != 'y' ]
+ do
+ echo "running extract_qm.sh new.pdb x.pdb"
+ extract_qm.sh new.pdb x.pdb
+ echo "Confirm the correctness of \"x.pdb\""
+ echo "Note that only polar Hydrogen atoms and Hydrogens listed as \"Eh\" in the .mol2 files will be present in \"x.pdb\"."
+ echo "Type \"pymol x.pdb\""
+ echo "Is the output correct?[y/N]"
+ read extract
+ if [ "$extract" != 'y' -o "$extract" = '' ]; then
+  echo "Edit reslist in input file and new.pdb. Press enter when done."
+  read 
+ fi
+ done
+ fi
+fi
+echo "Press enter when done ..."
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '11' ]; then
+#Add all missing Hydrogens to x.pdb by capping dangling bonds
+echo "****************"
+echo "We now add all missing Hydrogens to \"x.pdb\""
+echo
+echo "Press enter to continue ..."
+read
+if [ -s "h.pdb" ]; then
+ echo "h.pdb exists. Overwrite? [y/N]"
+ read hydrogen
+ if [ "$hydrogen" = 'y' ]; then
+  echo "running chimera_addh.sh x.pdb h.pdb"
+  chimera_addh.sh x.pdb h.pdb
+ else 
+  if [ "$hydrogen" = 'N' "$hydrogen" = 'n' -o "$hydrogen" = '' ]; then echo; fi 
+ fi
+else
+ echo "running chimera_addh.sh x.pdb h.pdb"
+ chimera_addh.sh x.pdb h.pdb
+fi
+echo "Confirm the correctness of \"h.pdb\"."
+echo "Type \"pymol h.pdb\""
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '12' ]; then
+#Identify the atoms to be included in the QM region from h.pdb
+echo "****************"
+echo "We now identify the atoms to be included in the QM region from \"h.pdb\""
+echo
+echo "Type \"pymol h.pdb\" and identify and record the QM atoms from \"h.pdb\"."
+echo
+echo "Append this info to the \"input\" file in the following format:"
+echo "#list LYS A  45 NZ HZ1 HZ2 HZ3"
+echo "#list ASP A 140 CB 1HB 2HB CG  OD1 OD2"
+echo "#list ASP A 168 CB 1HB 2HB CG  OD1 OD2"
+echo "#list ASN A 169 CG CG  OD1 ND2 1HND 2HND 1HB 2HB"
+echo "#list LYS A 143 CD 1HD 2HD CE 1HE 2HE NZ HZ1 HZ2 HZ3"
+echo
+echo "where \"#list\" is the keyword, the \"residue idenfier\" must match the entries in the reslist and the rest defines which atoms to retain in the qm region."
+echo "Depending on the label found in the existing \"x.pdb\" chimera will label the extra hydrogen 1HB or HB2, (2HB or HB3) pay attention."
+echo "If the \"x.pdb\" file is made again, the labelling of the atoms in the residues may be changed by chimera_addh.sh."
+echo "This means that the list setup may have to be changed if previously generated."
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '13' ]; then
+#Define how dangling bonds will be saturated
+echo "****************"
+echo "We now define how dangling bonds will be saturated."
+echo
+echo "Type \"pymol h.pdb\" and identfy and record the \"chopping\" points for the QM region."
+echo
+echo "Append this info to the \"input\" file in the following format:"
+echo "For each residue that you wish to chop specify a #chop line:"
+echo
+echo "#chop LYS A 143  CG CD HG1 0.7052"
+echo "#chop GLU A 198  CA CB HB1 0.7052"
+echo "#chop ASN A 169  CA CB HB1 0.7052"
+echo
+echo "where #chop is the keyword, followed by the residues specification and 4 entries \"CA CB HX1 0.7052\"."
+echo "This means that for the specified residue, chop the CA-CB bond, substituting CA with a hydrogen (named HX1) placed at a distance of (0.7052)*d(CA-CB) from CB."
+echo "\"HX1\" must be a Hydrogen label that is not used in the rest of the residue."
+echo "For each moiety in the calculation one specifies up to 2 chopping points eg."
+echo
+echo "#chop SAM B   1  CBS CGS HX1 0.7052     C4PS C5PS HX2 0.7052"
+echo "#chop ASP A 140  Default"
+echo
+echo "The 'Default' Keyword can be used as well, and it is equivalent to: \"CA CB HB1 0.7052\""
+echo "Remember that \"CA CB HX1 0.7052\" is very different from \"CB CA HX1 0.7052\", in the first case CA is replaced by a Hydrogen, in the second, CB is replaced."
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '14' ]; then
+#Define what atoms are frozen
+echo "****************"
+echo "We now define what atoms are frozen."
+echo
+echo "Type \"pymol h.pdb\" and identify and record the QM atoms whose coordinates that will be frozen."
+echo
+echo "The \"input\" file should also specify the atoms that are frozen during the QM optimization."
+echo "Each residues that has frozen atoms has its own list, remember to include in the list all the atom involved in the chopping procedure."
+echo "Typically, the new Hydrogen made in the chopping procedure is frozen along with the attached Carbon or other atom."
+echo
+echo "#frozen ASN A 169  CB HB1"
+echo "#frozen LYS A 169  CB HB1"
+echo "#frozen GLU A 169  CB HB1"
+echo "#frozen SAM B   1  CGS HX1 C5PS HX2"
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '15' ]; then
+#Prepare files involved in hacking DMD
+echo "****************"
+echo "Preparing a Spec1.sh file that care of \"system specific situation\" e.g. restore Fe instead of Zn used to hack DMD, e.g.:"
+echo
+echo "sed s/Zn/Fe/ < \$1 > _tmp"
+echo "mv _tmp \$1"
+echo
+echo "A Spec2.sh file is included to do the opposite of Spec1.sh."
+if [ -s "Spec1.sh" -a -s "Spec2.sh" ]; then
+ echo "Spec1.sh and Spec2.sh files exist. Overwrite?[y/N]"
+ read Spec
+ if [ "$Spec" = 'y' ]; then
+  echo "What is the symbol of the metal? Keep adding symbols for each metal and type \"done\" when complete."
+  read metal
+  rm -f Spec1.sh Spec2.sh
+  metall=n
+  while [ $metal != done ]
+  do
+   metall=y
+   echo "sed s/Zn/$metal/ < \$1 > _tmp" >> Spec1.sh
+   echo "sed s/$metal/Zn/ < \$1 > _tmp" >> Spec2.sh
+   echo "Enter the next metal symbol or type \"done\"."
+   read metal
+  done
+  if [ "$metall" = 'y' ]; then echo "mv _tmp \$1" >> Spec1.sh ; fi
+  if [ "$metall" = 'y' ]; then echo "mv _tmp \$1" >> Spec2.sh ; fi
+  chmod +x Spec1.sh
+  chmod +x Spec2.sh
+ else
+  if [ "$Spec" = 'N' -o "$Spec" = 'n' -o "$Spec" = '' ]; then echo "Keeping original \"Spec1.sh\" and \"Spec2.sh\" files." ; fi
+ fi
+else
+  echo "Making \"Spec1.sh\" and \"Spec2.sh\" files"
+  echo "What is the symbol of the metal? Keep adding symbols for each metal and type \"done\" when complete."
+  read metal
+  rm -f Spec1.sh Spec2.sh
+  metall=n
+  while [ $metal != done ]
+  do
+   metall=y
+   echo "sed s/Zn/$metal/ < \$1 > _tmp" >> Spec1.sh
+   echo "sed s/$metal/Zn/ < \$1 > _tmp" >> Spec2.sh
+   echo "Enter the next metal symbol or type \"done\"."
+   read metal
+  done
+  if [ "$metall" = 'y' ]; then echo "mv _tmp \$1" >> Spec1.sh ; fi
+  if [ "$metall" = 'y' ]; then echo "mv _tmp \$1" >> Spec2.sh ; fi
+  chmod +x Spec1.sh
+  chmod +x Spec2.sh
+fi
+echo
+echo "Confirm your \"Spec1.sh\" and \"Spec2.sh\" files."
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '16' ]; then
+#Prepare the coord file for use in Turbomole
+echo "****************"
+echo "We now prepare the \"coord\" file for use in Turbomole from \"h.pdb\" by first making \"chop.xyz\"."
+echo
+echo "Using the \"input\" file information, \"chop.xyz\" is obtained from \"h.pdb\" and represents the QM region."
+echo "The \"chop.xyz\" file is converted into the Turbomole file \"coord\"."
+echo
+chopp=good
+
+if [ -s chop.xyz ]; then
+ echo "\"chop.xyz\" already exists. Overwrite?[y/N]"
+ read chop
+ if [ "$chop" = 'y' ]; then
+  echo "Generating the \"coord\" file."
+  while [ "$chopp" != 'y' -o "$chopp" = 'N' -o "$chopp" = 'n' -o "$chopp" = '' ]
+  do
+  echo "running create_coord.sh h.pdb ..."
+  echo "If errors check \"h.pdb\" and \"chop.xyz\"."
+  create_coord.sh h.pdb
+  echo "Confirm that \"chop.pdb\" is correct (use pymol chop.pdb) before continuing."
+  echo "Is the output correct?[y/N]"
+  read chopp
+  done
+ fi
+else
+ echo "Generating the \"coord\" file."
+ while [ $chopp != y ]
+ do
+ echo "running create_coord.sh h.pdb ..."
+ echo "If errors check \"h.pdb\" and \"chop.pdb\"."
+ create_coord.sh h.pdb
+ echo "Confirm that \"chop.pdb\" is correct (use pymol chop.pdb) before continuing."
+ echo "Is the output correct?[y/N]"
+ read chopp
+ done
+fi
+
+echo "Confirm the correctness of \"chop.xyz\"."
+echo "\"chop.xyz\" should contain the correct QM region"
+echo
+echo "Type \"pymol chop.xyz\"."
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '17' ]; then
+#Set up the Turbomole calculation
+echo "****************"
+echo "We now set up the Turbomole calculation"
+echo "Possible QM calculations will use RIDFT at the basis set def2-SVP or def2-SV(P) for optimizations, and def2-TZVPP for metals and single points energies" 
+echo
+echo "We now create the remaining directories and files for the QM/DMD calculations"
+if [ -d "Template_EO" -a -d "Template_Opt" ]; then
+ echo "DMD directories (Template_EO and Template_Opt) exist. Overwrite?[y/N]"
+ read directories
+ if [ "$directories" = 'y' ]; then
+  echo "Copying the \"coord\" file into Template_EO."
+  if [ -f "Template_EO/coord" ]; then cp Template_EO/coord Template_EO/coordsave; fi
+  if [ -f "coord" ]; then cp coord Template_EO/coord; fi
+  mv Template_EO/control Template_EO/control.save
+  mv Template_EO/auxbasis Template_EO/auxbasis.save
+  mv Template_EO/mos Template_EO/mos.save
+  mv Template_EO/basis Template_EO/basis.save
+  echo "Enter Template_EO."
+  echo "Type \"define\" to start the Turbomole setup."
+  echo "Press enter when done with Turbomole setup ..."
+  read
+  echo "Adding \"run_calc.sh\"(contains \"ridft >> ridft.out\", which may be edited to some other user-defined single point calculation option) to Template_EO ..."
+  cd ./Template_EO
+  echo "Adding \"\$disp3\" option to the Turbomole \"control\" file." 
+  echo "\$disp3" >> control
+  echo "Also, double check your \"control\" file for the settings of"
+  echo "\$scfiterlimit (number of scf iterations), func (DFT functional), and m (amount of memory)."
+  echo "ridft >> ridft.out" > run_calc.sh
+  cd ..
+  echo "Copying Template_EO to Template_Opt ..."
+  rm -R Template_Opt/
+  cp -R Template_EO/ Template_Opt/
+  echo "A new Template_Opt directory may be made if the optimization is different from the QM setup in Template_EO."
+  echo "Adding a new \"run_calc.sh\" file (contains \"jobex -c 300 -ri -energy 5 -gcart 2 -gexp 2\", which may be edited to some other user-defined optimization option) to Template_Opt."
+  cd ./Template_Opt
+  echo "Make a new run_calc.sh file?[Y/n]"
+  read runcalc
+  if [ "$runcalc" = 'Y' -o "$runcalc" = 'y' -o "$runcalc" = '' ]; then
+   rm run_calc.sh
+   echo "Enter the new setup for run_calc.sh under Template_Opt:"
+   read jobex
+   echo ""$jobex"" > run_calc.sh
+   if [ "$jobex" = 'n' -o "$jobex" = '' ]; then echo "jobex -c 300 -ri -energy 5 -gcart 2 -gexp 2" > run_calc.sh; fi
+  fi
+  cd ..
+ else
+  if [ "$directories" = 'N' -o "$directories" = 'n' -o "$directories" = '' ]; then echo "Keeping Template_EO and Template_Opt directories." ; fi
+ fi
+
+else
+
+ echo "Creating a ./Template_EO directory and copying the \"coord\" file into it."
+ mkdir Template_EO
+ if [ -f "Template_EO/coord" ]; then cp Template_EO/coord Template_EO/coordsave; fi
+ if [ -f "coord" ]; then cp coord Template_EO/coord; fi
+ echo "Enter Template_EO."
+ echo "Type "define" to start the Turbomole setup."
+ echo "Press enter when done with Turbomole setup ..."
+ read
+ echo "Adding \"run_calc.sh\"(contains \"ridft >> ridft.out\", which may be edited to some other user-defined single point calculation option) to Template_EO ..."
+ cd ./Template_EO
+ echo "Adding \"\$disp3\" option to the Turbomole \"control\" file." 
+ echo "\$disp3" >> control
+ echo "Also, double check your \"control\" file for the settings of"
+ echo "\$scfiterlimit (number of scf iterations), func (DFT functional), and m (amount of memory)."
+ echo "ridft >> ridft.out" > run_calc.sh
+ cd ..
+ echo "Copying Template_EO to Template_Opt ..."
+ cp -R Template_EO/ Template_Opt/
+ echo "A new Template_Opt directory may be made if different from Template_EO."
+ echo "Adding a new \"run_calc.sh\" file (contains \"jobex -c 300 -ri -energy 5 -gcart 2 -gexp 2\", which may be edited to some other user-defined optimization option) to Template_Opt."
+ cd ./Template_Opt
+ rm run_calc.sh
+ echo "jobex -c 300 -ri -energy 5 -gcart 2 -gexp 2" > run_calc.sh
+ cd ..
+fi
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '18' ]; then
+#Ready to start QM/DMD calculations
+echo "****************"
+echo "Make sure that your directory contains the following files and directories:"
+echo "*.mol2    inConstr    input    topparam.list    new.pdb    Spec1.sh    Template_EO/    Template_Opt/"
+echo "The following DMD controls need to be appended to the \"input\" file:"
+echo
+echo "export Ti=0.1"
+echo "export Tf=0.1"
+echo "export n_cluster=20"
+echo "export MAX_TIME=10000"
+echo "export Iterations=40"
+echo "export equilibrate=true"
+echo "export discard=true"
+echo "export convergeDMD=true"
+echo
+echo "where:"
+echo "1. Ti, and Tf are the initial and final temperatures, respectively, (this feature has not been testedd, and for the moment it is better to have Ti=Tf)."
+echo "2. n_cluster defines the number of the clusters to be analyzed"
+echo "3. MAX_TIME: the length of each DMD simulation"
+echo "4. Iterations: the number of QM/DMD iterations"
+echo "5. equilibrate: involves a 5 step temperature annealing as described in our first article"
+echo "6. discard: imposes that the newly computed structure will be used in the input for the iteration"
+echo "            only if the energy of the QM optimized region is lower than a previously obtained reference structure."
+echo "7. ConvergeDMD: the DMD simulations we use are relatively short and may be stuck in an high energy local minimum,"
+echo "                with this keyword the program try to run subsequent DMD simulations (up to 10) until the DMD energy seems converged."
+echo
+if [ -f "input" ]; then
+ echo "Warning: \"input\" file already exists"
+fi
+echo "Input these DMD running options into the \"input\" file? [y/N]"
+read inputcheck
+if [ "$inputcheck" = 'y' ]; then
+ echo " " >> input
+ echo "export Ti=0.1" >> input 
+ echo "export Tf=0.1" >> input
+ echo "export n_cluster=20" >> input
+ echo "export MAX_TIME=10000" >> input
+ echo "export Iterations=40" >> input
+ echo "export equilibrate=true" >> input
+ echo "export discard=true" >> input
+ echo "export convergeDMD=true" >> input
+ echo "Confirm the correctness of the \"input\" file."
+else
+ if [ "$inputcheck" = 'N' -o "$inputcheck" = 'n' -o "$inputcheck" = '' ]; then
+ echo "Options added to \"input\" file already or need to be added manually."
+ fi
+fi
+echo
+echo "Press enter when done ..."
+echo
+read
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '19' ]; then
+#Check that the DMD calculation will not stall due to errors in the constraints file
+echo "****************"
+echo "Check that the DMD calculation will not stall due to errors in the constraints file by testing pdb_to_pdbDMD.sh script."
+echo "Running pdb_to_pdbDMD.sh new.pdb test.pdb ..."
+pdb_to_pdbDMD.sh new.pdb test.pdb
+echo "A \"GOOD TO GO\" message indicates that there are no formal errors in your files."
+echo "If no \"GOOD TO GO\" message, then \"new.pdb\" will be re-made, however the script will need to re-run from step [7]."
+dbg=n
+while [ -f "debug" ]
+do
+ dbg=y
+ echo "Error converting \"initial.pdb\" to \"new.pdb\"."
+ echo "Edit \"topparam.list\" and \"*.mol2\" files."
+ echo "Press enter to attempt conversion again ..."
+ read
+ rm debug debug1 debug2
+ pdb_to_pdbDMD.sh initial.pdb new.pdb
+done
+if [ "$dbg" = 'y' ]; then echo "Re-run script from step [7]."; exit; fi
+if [ "$dbg" = 'n' ]; then 
+ echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+ echo "!!!!QM/DMD SETUP SUCCESSFUL!!!!"
+ echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+ echo
+ echo "Always double-check these primary files: \"h.pdb\", \"chop.xyz\", \"control\" and \"coord\"."
+fi
+echo
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '20' ]; then
+#Submitting the QM/DMD job
+ echo "****************"
+ echo "Submitting the QM/DMD job"
+ echo "Making scratch directory ... "
+ scratch=$fullpathname/scratch
+ if [ ! -d "$scratch" ]; then 
+  mkdir $scratch 
+ fi
+ echo "Are you running on the hoffman queue?[Y/n]"
+ read hoffman
+ if [ "$hoffman" = 'Y' -o "$hoffman" = 'y' -o "$hoffman" = '' ]; then
+  echo "Submit the simulation using \"runstep.sh -sub -t 24 -N 8 0 0\"."
+  echo "In order to continue a simulation (assuming the first 7 iterations (for example) are ok." 
+  echo "Run \"runstep.sh -sub -t 24 -N 4 8 8\"."
+  echo "Available flags and descriptions:"
+  echo "-help    ;usage"
+  echo "-sub     ;submit to queue"
+  echo "-N \$2    ;number of cores"
+  echo "-type \$2 ;type of cores"
+  echo "-q \$2    ;queue name"
+  echo "-mem \$2  ;memory in Gb"
+  echo "-t \$2    ;wall time in hours"
+  echo "\$3 and \$4 are start and end interation numbers, respectively."
+  echo "If \$3 is the same as \$4, the iterations are started from ther value. This is the typical option."
+  echo "If \$3 is different from \$4, the iterations are run from \$3 to \$4 and then the run is automatically resubmitted to the queue."
+  
+  echo "Submitting your QM/DMD folder to hoffman2 cluster ... " 
+
+  if [ -s config1 ]; then
+   source config1
+   echo "Add or change hoffman2 directory?[y/N]"
+   read hoffchange
+   if [ "$hoffchange" = 'y' ]; then
+    echo "Enter the hoffman2 directory with full path under which your want your QM/DMD folder:"
+    read hofffolder
+    echo "hofffolder=$hofffolder" >> config1
+    echo "Make sure that your QM/DMD folder does not already exist where you want to add it on hoffman2."
+    echo "Transfer your QM/DMD folder to hoffman?[y/N]"
+    read transfer
+    if [ "$transfer" = 'y' ]; then
+     echo "What is your hoffman username?"
+     read hoffuser
+     scp -r $fullpathname $hoffuser@hoffman2.idre.ucla.edu:$hofffolder
+     echo "QM/DMD run transferred to hoffman2. Run your job from hoffman2."
+    fi
+   else
+    if [ "$hoffchange" = 'N' -o "$hoffchange" = 'n' -o "$hoffchange" = '' ]; then
+     echo "The hoffman2 directory: $hofffolder is kept."
+     echo "Make sure that your QM/DMD folder does not already exist where you want to add it on hoffman2."
+     echo "Transfer your QM/DMD folder to hoffman?[y/N]"
+     read transfer
+     if [ "$transfer" = 'y' ]; then
+      echo "What is your hoffman username?"
+      read hoffuser
+      scp -r $fullpathname $hoffuser@hoffman2.idre.ucla.edu:$hofffolder
+      echo "QM/DMD run transferred to hoffman2. Run your job from hoffman2."
+     fi
+    fi
+   fi
+  else
+   echo "Enter the hoffman2 directory with full path under which your want your QM/DMD folder:"
+   read hofffolder
+   echo "hofffolder=$hofffolder" >> config1
+   echo "Make sure that your QM/DMD folder does not already exist on hoffman2."
+   echo "Transfer your QM/DMD folder to hoffman?[y/N]"
+   read transfer
+   if [ "$transfer" = 'y' ]; then
+    echo "What is your hoffman username?"
+    read hoffuser
+    scp -r $fullpathname $hoffuser@hoffman2.idre.ucla.edu:$hofffolder
+    echo "QMDMD run transferred to hoffman2. Run your job from hoffman2."
+   fi
+  fi
+ 
+ else
+
+  if [ "$hoffman" = 'n' ]; then
+   echo "Submit the simulation to a local machine using \"step.sh 0 20 $scratch 1111\"."
+   echo "Available flags and descriptions:"
+   echo "\$1 is the first iteration"
+   echo "\$2 is the last iteration"
+   echo "\$3 is the full path to the scratch directory"
+   echo "\$4 is the job id number (enter a random number like 1111 since not running on a cluster)"
+  fi
+ fi
+ echo
+#@@@@@@@@@@@@@@@@@@@@@
+ if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '21' ]; then
+#Notes on running QM/DMD
+echo "View notes on running QM/DMD?[y/N]"
+read notes
+if [ "$notes" = 'y' ]; then
+ echo "****************"
+ echo "Notes on running QM/DMD."
+ 
+ echo " 
+ There are some general useful points for obtaining a successful QM/DMD run.
+ QM/DMD generally runs by having parts that take care of DMD and QM separately.
+ 
+[1] Making your reslist:
+    When making your reslist, do not type in the format.
+    Instead, open the \"initial.pdb\" file and copy the area holding the required format.
+    Then, without further alteration, simply put the copied format in double quotations.
+ 
+[2] Running your first pdb_to_pdbDMD.sh:
+    Avoid having a \"inConstr\" file present, since this initial run adds the necessary Hydrogens 
+    and the inConstr file may have options that may cause errors. 
+    You may simply save the \"inConstr\" file as a different name (eg. inConstr.save, or inC.save).
+    This script normally saves this file as inConstr.save anyway.
+ 
+[3] Labeling Hydrogens:
+    Make sure to set up the correct positions for your polar hydrogens during the DMD part.
+    This part is done using the pdb_to_pdbDMD.sh script.
+    Use the Deprotonate and the Protonate options in inConstr to help put the correct positions of the hydrogens,
+    for example if you have unusual protonation of a Histidine residue.
+    The labels given to these hydrogens should be exclusively used for the #line setup in the \"input\" file. 
+    Double check your setup by using:
+    pdb_to_pdbDMD.sh new.pdb test.pdb
+    then run \"pymol test.pdb\" to confirm the correct positioning of your Hydrogens.
+    Otherwise use:
+    pdb_to_pdbDMD.sh initial.pdb new.pdb
+    in order to use the original coordinates from the \"initial.pdb\" file to now obtain the correct DMD setup.
+    Once satisfied with the positions of all Hydrogen, then adding Hydrogens using chimera_addh.sh may be done,
+    and will not affect your chop and coord file atom labeling.
+
+[4] Chimera adding hydrogens:
+    One thing to keep in mind is that DMD and chimera add hydrogens at different phases
+    of QM/DMD. During the pdb_to_DMD.sh, the DMD code adds the polar hydrogens and
+    gives them a specific name. During the chimera_addh.sh, chimera will add hydrogens
+    to the chopped QM region. This is also why the labeling scheme for the polar hydrogens
+    should be exclusively done via the DMD script pdb_to_pdbDMD.sh and the editing of the
+    inConstr file.
+
+ "
+
+else
+ if [ "$notes" = 'N' -o "$notes" = 'n' -o "$notes" = '' ]; then 
+ echo 
+ fi 
+fi
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '22' ]; then
+#Errors and solutions
+echo "View errors and potential solutions?[y/N]"
+read errors
+if [ "$errors" = 'y' ]; then
+echo "****************"
+echo "Errors and solutions."
+
+echo "
+If you run your QM/DMD simulation on the hoffman2 cluster, 
+you can check your runs within the files with the following format \"step(iteration#).sh.out\". 
+This file is a good starting point to see where your simulation may have failed. 
+This step file will show certain info in the following order:
+
+Using a cluster, in order to check your runs look for files starting with \"step\" followed by a number, 
+indicating the Iteration number.
+This \"step\" file will show certain info in the following order:
+[1] The results from a pdb_to_pdbDMD.sh test on the final \"new.pdb\" file.
+[2] Results from a short DMD run at 10K for 5 annealing steps.
+    [This shows that DMD runs well, and allows the whole system to relax into the nearest potential energy well.]
+[3] Now DMD runs MD simulations that gives a certain number of clusters of your systems. 
+    The minima and centroid structures (nodes) and energies are extracted from this clustering.
+[4] Chimera is then used to add Hydrogens to each of the nodes.
+[5] The QM region is extracted from each node and a single point energy on each node using Turbomole. 
+    [Some runs can be expected to fail, however most to all should be successful or converged.]
+[6] Using a scoring function, a specific node is chosen as a winner.
+[7] The QM region from the winner is then fully optimized using Turbomole.
+[8] The optimized QM region is added to the DMD structure.
+[9] The final QM/DMD energy is compared against the lowest QM/DMD energy from the last Iteration or Iteration_0.
+[10] Based on the comparison the optimized structure is used or the older structure is used from the last run.
+
+Each iteration will make a directory called \"Iteration_#\", where # is the iteration number.
+Each Iteration directory will hold info for both the DMD and QM/Turbomole calculations for that iteration.
+Some important files and folders should be highlighted:
+vvvvvvvvvvvvvvvvvvvv
+dmd.err               - results of applying pdb_to_pdbDMD.sh for that Iteration.
+new.pdb               - the new.pdb used for that Iteration folder.
+Optimized_qm.xyz      - the turbmole optimized qm region of the winner.pdb.
+qm_energies.dat       - a list of the single point energies of the DMD nodes (minima and centroids).
+qm_inp.pdb            - the extract reslist out of the winner.pdb.
+qmres_chop.pdb        - the result of applying the \"input\" file to qm_inp.pdb.
+scoring               - showing DMD and QM energies for each DMD node and the winner (w -- w).
+sites.pdb             - superposition of chopped QM region structures extracted from each DMD node for single point energy calculations.
+to_be_installed.pdb   - the next \"new.pdb\" without chimera_addh done.
+to_next_iteration.pdb - the next \"new.pdb\" to be used for next iteration 
+                        (if lower in energy than reference new.pdb from last Iterations).
+winner.pdb            - the final optimized QM/DMD structure from the iteration.
+The \"Optimization\" directory holds the results of the Turbomole optimization, 
+including molecular orbitals, and a record of the success or failure of the Turbolmole optimization. 
+The \"Structures\" directory holds the DMD node structures, and the Turbomole QM coord_node structures 
+used in the calculation of the scoring index.
+^^^^^^^^^^^^^^^^^^^^
+ 
+Under the main directory of the run, there are several files of note:
+vvvvvvvvvvvvvvvvvvvv
+index.label          - list of atoms and residues from chopping procedure.
+Iteration_*          - directories for each iteration (*).
+Opt.xyz              - lists all coordinates from each Turbomole iteration from each QM/DMD iteration. Use \"molden Opt.xyz\" to view.
+qm_opt_energies.dat  - lists the final DMD (column 2) and QM (column 3) energies for each QM/DMD iteration.
+qm_var_energies.dat  - lists the final QM energies for each QM/DMD iteration and the relative QM/DMD iteration 
+                       to an indicated reference Iteration QM/DMD energy. 
+                       For example, if your simulation has gone through 2 iterations 
+                       and has only accepted the Iteration_0 QM region since it has the lowest 
+                       QM energy comparatively, the file will have first the QM energies for 
+                       Iteration_0, 1 and 2 and then the relative energy of Iteration_1 and 2 wrt to Iteration_0.
+reference_ene        - indicates the reference QM/DMD iteration number and the corresponding QM/DMD energy.
+scoring_index        - indicates the scoring values, nodes, and winners from each QM/DMD iteration.
+scratch              - a directory that holds information on the running Iteration for a single node run. 
+                       This information may be found under the cluster scratch directory 
+                       like on the Hoffman2 cluster.
+[QMDMDfoldername]_[iterationnumber].joblog.[queueid] - queue information for the particular QM/DMD Iteration.
+[QMDMDfoldername]_[iterationnumber].sh               - \"runstep.sh\" version for the particular iteration. 
+^^^^^^^^^^^^^^^^^^^^
+
+There are several errors that may occur in this process.
+(Note!!: ~90% of problems come from forgetting atoms in your input file or mislabeling atoms!)
+
+A typical one may be seen during the Turbomole part, where there is a complaint about an \"Energy\" file missing.
+This is usually due to an improper #list in the \"input\" file, so your structure 
+may have missing hydrogens or atoms thus Turbomole cannot complete a calculation.
+Check the Iteration directory for the particular iteration and search for qmres_chop.pdb.
+Using chimera or pymol, check that the expected QM region is present.
+If not, look at the \"input\" file and using pymol or chimera, 
+make sure that the labels match with the \"new.pdb\" used to start the QM/DMD run.
+
+If the runs bombs in your Turbomole step, make sure you have a high enough scfiteration (~300) in your control file.
+Also, make sure that you have chosen the correct abbreviations for your functional and basis sets in that control file.
+The control file will be under your QM/DMD directory in your Template_EO and Template_Opt folders.
+To check the control file used for a particular Iteration number, look in the Iteration folder for that iteration number.
+"
+
+else
+
+if [ "$errors" = 'N' -o "$errors" = 'n' -o "$errors" = '' ]; then echo; fi
+fi
+#@@@@@@@@@@@@@@@@@@@@@
+if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '23' ]; then
+#QM/DMD analysis suggestions and tools.
+ echo "View QM/DMD analysis suggestion and tools?[y/N]"
+ read tools
+ if [ "$tools" = 'y' ]; then
+  echo "****************"
+  echo "QM/DMD analysis suggestions and tools."
+  echo "
+After your QM/DMD simulation, there are a few scripts that have been developed to aid in analysis of your specific project. 
+There are a few routine checks that you should do, however, you may need to develop more tools of your own depending on the chemistry of you system.
+There will be a list of files and directories as outlined in \"Errors and Solutions\" section.
+From this information one may obtain the following:
+[1] Extract pdb files from the end of each iteration
+    collect_pdb1.sh    - This script should be used in the main directory. It was create a directory titled \"pdb\" and complie from each iteration the pdb with the DMD and QM converged structures. 
+                         If Opt_2 is present it will plug in the fully optimized active site into the protein.
+[2] The RMSD of the backbone (BB) protein structure
+    bb_superposition.sh   - This script should be used in the directory that is generated by the collect_pdb1.sh. 
+                            It will find the best superposition for the backbone of the protein then the same rotation will be applied to the entire system.
+[3] The change in the coordination of the metal.
+    Use a resources like \"Chemistry of the Elements\" 2nd Ed. by N. N. Greenwood and A. Earnshaw to determine the normal coordination of the metal.
+    Use this coordination information to assess you original and final QM/DMD structures.
+    sites.pdb (?)
+[4] The change in energies of the QM region
+    qm_opt_energies.dat   - This file contains the final optimized QM energy (column 2)
+                            and the final DMD energy (column 3) from each Iteration. 
+                            If you plot these values, you can get an idea of how \"converged\" is your simulations.
+    qm_var_energies.dat   - This file contains all the final optimized QM energy and the relative energy 
+                            of the final QM energy compared to the lowest QM energy so far.
+    Optimized.sh #energyvalue  - This script parses all Iteration, extracting the fully optimized QM structure and saving it in the file finals.xyz. 
+                                 When you input a given energy value (#energyvalue) it creates two files, long.dat and fast.dat that contains the energy of 
+                                 the complete optimization and partial optimization with respect to the reference #energyvalue for each Iteration.
+[5] To overlay specific parts of protein
+    active_site.sh (not for analysis, only used during QM/DMD)
+    sites.pdb (?)
+    partial_superposition.sh - This script is made to run within the pdb directory created by collect_pdb1.sh. 
+                               You must pick a reference structures, usually Iteration_0.pdb, that will rotate and calculated the RMSD values from this reference structure. 
+                               It uses input files to accomplish these rotations. The first input_guide will include the residues that will be used in calculating the smallest RMSD. 
+                               Then the residues in input_follow will be the ones you want to \"follow\" your alignment, usually of region you want to measure RMSD or motion.
+[6] The overlay of the whole protein
+    protein_superposition.sh    - (?)
+[7] Collect only DMD pdb structures from each Iteration
+    collect_pdb_dmd_only.sh     - This script will collect the \"DMD-only\" final structures, no QM is involved, from each Iteration folder and put them into the directory \"dmd_pdb_only\".
+"
+
+ else
+
+  if [ "$tools" = 'N' -o "$tools" = 'n' -o "$tools" = '' ]; then echo; fi
+ fi
+#@@@@@@@@@@@@@@@@@@@@@
+ if [ "$readsection" = 'y' ]; then exit; fi
+fi
+
+
+if [ "$section" -lt '24' ]; then
+#End of QM/DMD setup and execution
+echo "****************"
+echo "End of QM/DMD setup and execution."
+echo "Press enter to exit."
+read
+fi
+
+exit
